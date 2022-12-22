@@ -8,7 +8,7 @@ try:
 	cmdclass['build_ext'] = build_ext
 except:
 	ext = 'c'
-ext_modules = [ Extension( "test_cython.cutils", ['test_cython/cutils.' + ext],
+ext_modules = [ Extension( "ian.cutils", ['ian/cutils.' + ext],
 				include_dirs=[numpy.get_include()],
 				) ]
 setup(

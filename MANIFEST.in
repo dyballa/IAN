@@ -1,1 +1,1 @@
-include test_cython/*
+include ian/*

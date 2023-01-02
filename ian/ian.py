@@ -8,8 +8,8 @@ from scipy.spatial.distance import squareform, pdist
 from scipy.stats import norm as gauss
 from scipy.stats import median_abs_deviation
 from collections import deque
-from test_cython.utils import subps, getTri, plotDataGraph
-from test_cython.cutils import computeGabriel, greedySplitting
+from ian.utils import subps, getTri, plotDataGraph
+from ian.cutils import computeGabriel, greedySplitting
 
 solver_opts = {'SCS':dict(use_indirect=True,eps=1e-3), 'ECOS':dict(abstol=1e-3,reltol=1e-3),
        'GUROBI':dict(FeasibilityTol=1e-5,OptimalityTol=1e-5)}

@@ -476,7 +476,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
        pre_deleted_nodes=None, plot_final_stats=True, saveImgs={}, solver=None,
        return_processed_inputs=False, tune_wG_method='median',
        allowMSconvergence=False, plotQuartiles=True, return_stats=False):
-    """Compute IAN kernel from a data matrix or pairwise distances.
+    """Compute IAN kernel from a data matrix or from pairwise distances.
     Parameters
     ----------
     method: str
@@ -1038,21 +1038,25 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
         if extraVerbose:
             print(len(to_be_pruned),'nodes above threshold.')
 
-        if len(to_be_pruned) == 0:
-            #check that median (from C tuning) is approx 1
-            if diffmu > median_tol:
-                if extraVerbose:
-                    print(f'! Distribution is not yet centered (median = {mu:.2f} >> 1). Keep pruning...')
-                n_below = (nonz_stats < 1 + median_tol).sum()
-                n_to_prune = nonz_stats.size - 2*n_below
-                #add all those points preventing 1 from being the actual median
-                to_be_pruned = np.argsort(stats)[-n_to_prune:][::-1]
+        #TODO: check for not centered median regardless of len(to_be_pruned)
+        #because if not centered, this must give many more pts to prune
 
-            else:
+        #check that median delta'_i (from C-tuning) is not much greater than 1
+        if diffmu > median_tol:
+            if extraVerbose and len(to_be_pruned) == 0:
+                print(f'! Distribution is not yet centered (median = {mu:.2f} >> 1). Keep pruning...')
+            n_below = (nonz_stats < (1 + median_tol)).sum()
+            n_to_prune = nonz_stats.size - 2*n_below
+            assert n_to_prune > len(to_be_pruned)
+            #add all those points preventing the median from being close to 1
+            to_be_pruned = np.argsort(stats)[-n_to_prune:][::-1]
+
+        if len(to_be_pruned) == 0:
 
                 if minimalVerbose:
                     print('CONVERGED: no change in discrete graph.')
-                    print('Total # edges pruned:',sum(map(len,pruning_history)))
+                    print('Total # edges pruned:',sum(map(len,pruning_history)), end=', ')
+                    print(f'({len(disc_pts)} disconnected points)')
 
                 pruning_history.append([])
 
@@ -1085,7 +1089,8 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
             if ms_n_to_be_pruned == 0:
                 if minimalVerbose:
                     print('CONVERGED: weighted graph has no outliers.')
-                    print('Total # edges pruned:',sum(map(len,pruning_history)))
+                    print('Total # edges pruned:',sum(map(len,pruning_history)), end=', ')
+                    print(f'({len(disc_pts)} disconnected points)')
 
                 pruning_history.append([])
 
@@ -1130,7 +1135,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
                 
 
         if minimalVerbose:
-            print(f'### Iteration {it} done. ({time.time()-itstart:.2f} s) - pruned {len(to_be_pruned)} edge(s)')
+            print(f'### Iteration {it+1} done. ({time.time()-itstart:.2f} s) - pruned {len(to_be_pruned)} edge(s)')
         if extraVerbose:
             total_pruned += len(pruned_edge_tups)
             print(f'Total pruned so far: {total_pruned}', end=' ')
@@ -1544,277 +1549,313 @@ def buildOptimizationProblem(weighted_edges,D1_fn,objfoo='sum',sum_weights=None,
 
 
 
-def computeNofNsDims(NofNs_dict,data=None,cellNbrs=None,bounds=None,boundtol=1e-4,deltalog=1e-2,computeExact=False,
-                         computeAvgsFromCurve=False,verbose=True,special_points=[],subset=None,highestPeaks=True,returnSigs=False):
-    def findPeak(a,n=0):
-        maxs = np.flatnonzero((a[1:-1] > a[:-2]) & (a[1:-1] > a[2:])) + 1
-        assert len(maxs) >= n+1
-        return maxs[n]
-
-    def getMark(g2,startn=0,g3=None,returnAll=False):
-
-        #use the first max of g2 as starting point to escape numerical errors at the start of the curves
-        starti = findPeak(g2,startn)
-
-        #TODO: try to find closed forms for the zeros g2, g3
-
-        #g2 0-x
-        zero_cross = np.flatnonzero( (g2[starti:-1] > 0) & (g2[starti+1:] < 0) )
-        assert len(zero_cross) >= 1
-        if returnAll:
-            g2x0 = zero_cross + starti
-        else:
-            g2x0 = zero_cross[0] + starti
-    #     #can do the same looking for first peak in g1 -- less precise b/c with 0-x we interpolate
-
-    #     maxs = np.flatnonzero( (g1[starti+1:-1] > g1[starti:-2] + tol) & (g1[starti+1:-1] > g1[starti++2:] + tol) ) + 1
-    #     assert len(maxs) >= 1
-    #     g1max = maxs[0] + starti
-    #     assert g1max - g2x0 <= 1
-
-        #TODO: use 0x of G2 with a scipy root-finding algorithm in the interval [g2x0,g2x0+1]
 
 
-        #g3 0-x
-        if g3 is not None:
-            g3zero_cross = np.flatnonzero( (g3[starti:-1] < 0) & (g3[starti+1:] > 0) )
-            assert len(g3zero_cross) >= 1
+
+def estimateLocalDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, useMedian=True, returnDegDims=True,
+    debugPts=[], X=None, verbose=False):
+
+    """Implements the Neighborhood Correlation-Dimension (NCD) algorithm for estimating
+    the local dimension around each point.
+
+    Parameters
+    ----------
+    A : ndarray or sparse matrix, shape: (n_samples, n_samples)
+        A dense or sparse unweighted adjacency matrix (G, from the IAN algorith)
+    D2: ndarray, shape: (n_samples, n_samples)
+        a square matrix of pairwise squared distances
+    nbrhoodOrder: int
+        sets the number of hops for neighbors-of-neighbors to include in the extended neighborhood
+    centralPtDim: bool
+        whether to compute dimension based on central nodes of the neighborhood, default: True
+    nbrsAvgDims: bool
+        whether to smooth final dimension estimates by averaging among adjacent neighbors in A
+    useMedian: bool
+        whether to use median instead of mean when finding most central node in the neighborhood
+        (when centralPtDim is True)
+    returnDegDims: whether to return the dimension values directly obtained from the degrees in A
+    debugPts: list of ints
+        prints out detailed information about a particular set of nodes of interest
+    X: ndarray, shape: (n_samples, p)
+        data matrix with points as rows. Optional; used only when debugPts is not empty.
+    verbose: False
+        whether to print out current progress (number of nodes processed so far);
+        quite helpful for large datasets since this may take a few minutes to finish.
+
+    Returns
+    -------
+    NofNDims : local neighborhood correlation-dimension estimates, shape (n_samples,)
+    deg_dims: local dimension estimated from the degrees in A. Only returned when `returnDegDims` is True.
+
+    """
+    
+    def computeNofNsDims(NofNs_dict,data=None,cellNbrs=None,bounds=None,boundtol=1e-4,deltalog=1e-2,computeExact=False,
+                             computeAvgsFromCurve=False,verbose=True,special_points=[],subset=None,highestPeaks=True,returnSigs=False):
+        def findPeak(a,n=0):
+            maxs = np.flatnonzero((a[1:-1] > a[:-2]) & (a[1:-1] > a[2:])) + 1
+            assert len(maxs) >= n+1
+            return maxs[n]
+
+        def getMark(g2,startn=0,g3=None,returnAll=False):
+
+            #use the first max of g2 as starting point to escape numerical errors at the start of the curves
+            starti = findPeak(g2,startn)
+
+            #TODO: try to find closed forms for the zeros g2, g3
+
+            #g2 0-x
+            zero_cross = np.flatnonzero( (g2[starti:-1] > 0) & (g2[starti+1:] < 0) )
+            assert len(zero_cross) >= 1
             if returnAll:
-                g3x0 = g3zero_cross + starti
-            else: g3x0 = g3zero_cross[0] + starti
-            g2min = g3x0
-        else:
-    #     #can do the same looking for first trough in g2
-            mins = np.flatnonzero( (g2[starti+1:-1] < g2[starti:-2]) & (g2[starti+1:-1] < g2[starti++2:]) ) + 1
-            assert len(mins) >= 1
-            if returnAll:
-                g2min = mins + starti
-            else: g2min = mins[0] + starti
-    #     assert g2min - g3x0 <= 1
-
-        #TODO: use 0x of G3 with a scipy root-finding algorithm in the interval [g2min-1,g2min+1]
-
-        return g2x0,g2min
-    def computeCellBounds(ds,boundtol = 1e-4):
-
-        #compute left lim using closest nbr
-        llim = 0; lval = np.inf
-        myd = ds[ds > 0].min()
-        while lval > boundtol:
-            llim -= .25
-            lval = np.log10(1 + np.exp(-myd/(2*(10**llim)**2)))
-        #compute right lim using furthest nbr
-        rlim = 0; rval = 0
-        myd = ds.max()
-        while np.log10(2) - rval > boundtol:
-            rlim += .25
-            rval = np.log10(1 + np.exp(-myd/(2*(10**rlim)**2)))
-
-        return llim,rlim
-    def getG12(returnSumExps=False,returnG3=False):
-        sumexps = np.sum(exps,axis=0)
-        sumdsexps = np.sum(dsexps,axis=0)
-        sumd2sexps = np.sum(d2sexps,axis=0)
-
-        den = sumexps * s2
-        num = sumdsexps
-        g1 = num/den
-
-        #g2 - closed form
-        num0 = sumd2sexps
-        num1 = num**2
-        num2 = 2*num
-
-        s4 = s2*s2
-        den0 = sumexps * s4
-        den1 = sumexps * den0
-        den2 = den
-
-        g2 = (num0/den0 - num1/den1 - num2/den2)*np.log(10)
-        
-        
-        if not returnG3:       
-            if returnSumExps:
-                return g1,g2,sumexps,sumdsexps,sumd2sexps
-            return g1,g2
-        
-        # g3 - closed form
-        sumd3sexps = np.sum(d3sexps,axis=0)
-        s3 = s2*sigmas
-        s7 = s4*s3
-        sumexps2 = sumexps**2
-        sumexps3 = sumexps2*sumexps
-        s6 = s4*s2
-        num_2 = num**2
-        num_3 = num_2*num
-
-        num00 = sumd3sexps
-        den00 = sumexps*s6
-        num01 = -4*num0
-        den01 = den0
-        num02 = -num*num0
-        den02 = sumexps2*s6
-
-        g3_0 = num00/den00 + num01/den01 + num02/den02
-
-
-        num10 = -2*num0*num
-        den10 = sumexps2*s6
-        num11 = 4*num_2
-        den11 = sumexps2*s4
-        num12 = 2*num_3
-        den12 = sumexps3*s6
-
-        g3_1 = num10/den10 + num11/den11 + num12/den12
-
-
-        num20 = -2*num0
-        den20 = sumexps*s4
-        num21 = 2*num_2
-        den21 = sumexps2*s4
-        num22 = 4*num
-        den22 = sumexps*s2
-
-        g3_2 = num20/den20 + num21/den21 + num22/den22
-
-        g3 = (g3_0 + g3_1 + g3_2)*np.log(10)**2
-        
-        if returnSumExps:
-            return g1,g2,g3,sumexps,sumdsexps,sumd2sexps,sumd3sexps
-        return g1,g2,g3
-    
-
-        
-    N = len(NofNs_dict)
-    if subset is None:
-        subset = range(N)
-
-    cellNofNs = {}
-    if returnSigs:
-        NofNSigs = np.zeros(N)
-    NofNDims = np.zeros(N)
-
-
-    if bounds is None:    
-        bounds = np.zeros((N,2))
-        for c in subset:#range(N):
-            bounds[c] = computeCellBounds(NofNs_dict[c]['D2'],boundtol)
-    llim, rlim = bounds[:,0].min(),bounds[:,1].max()
-
-    lsigmas = np.arange(llim,rlim+deltalog,deltalog)
-    sigmas = 10**(lsigmas)
-    s2 = sigmas**2
-    ns = len(sigmas)
-
-    
-    #compute curves for n-of-ns
-    for ci,c in enumerate(subset):#range(N):
-        if verbose and ci % 250 == 0: print(ci,end=' ')
-        NofNs = NofNs_dict[c]['NofNs']
-
-
-        ds = NofNs_dict[c]['D2'] # each xi might have different no. of nbrs & n-of-nbrs
-        exps = np.array([np.exp(-d2/(2*s2)) for d2 in ds])
-        dsexps = ds[:,None] * exps
-        d2sexps = ds[:,None] * dsexps
-        
-        
-        # N-of-Ns curve
-        if computeExact:
-            d3sexps = ds[:,None] * d2sexps
-            nofn_g1,nofn_g2,nofn_g3 = getG12(returnG3=True)
-        else:
-            nofn_g1,nofn_g2 = getG12()
-            nofn_g3 = None
-
-        g2x0,g3x0 = getMark(nofn_g2,g3=nofn_g3,returnAll=highestPeaks)
-
-    
-            
-        if highestPeaks:
-            g2x0 = g2x0[np.argmax(nofn_g1[g2x0])]
-            g3x0 = np.inf#g3x0[np.argmax(nofn_g1[g3x0])] ##must be an actual max
-
-
-            
-        #x0 = g3x0 if g3x0 < g2x0 else g2x0
-        
-        if computeExact:        
-
-            allNNds = NofNs_dict[c]['D2']
-
-            if g3x0 < g2x0:
-                s_peak = brentq(g3exact,sigmas[g3x0],sigmas[g3x0+1],(allNNds))
-                nofn_x0 = g3x0
-
+                g2x0 = zero_cross + starti
             else:
-                s_peak = brentq(g2exact,sigmas[g2x0],sigmas[g2x0+1],(allNNds))
-                nofn_x0 = g2x0
-                
-            nofn_sig = s_peak
-            nofn_dim = g1exact(s_peak,allNNds)
-        else:
-            nofn_x0 = g3x0 if g3x0 < g2x0 else g2x0
-        
-            nofn_sig = sigmas[nofn_x0]
-            nofn_dim = nofn_g1[nofn_x0]
-        if returnSigs:
-            NofNSigs[c] = nofn_sig
-        NofNDims[c] = nofn_dim
+                g2x0 = zero_cross[0] + starti
+        #     #can do the same looking for first peak in g1 -- less precise b/c with 0-x we interpolate
 
-        ###PLOTS
-        if c in special_points:
-            print('c',c)
-            if cellNbrs is not None:
-                NNs = list(set(cellNbrs[c]).difference([c]))
-                print('NNs',NNs)
-            print('NofNs',NofNs)
-            print('d2s',ds)
+        #     maxs = np.flatnonzero( (g1[starti+1:-1] > g1[starti:-2] + tol) & (g1[starti+1:-1] > g1[starti++2:] + tol) ) + 1
+        #     assert len(maxs) >= 1
+        #     g1max = maxs[0] + starti
+        #     assert g1max - g2x0 <= 1
+
+            #TODO: use 0x of G2 with a scipy root-finding algorithm in the interval [g2x0,g2x0+1]
 
 
+            #g3 0-x
+            if g3 is not None:
+                g3zero_cross = np.flatnonzero( (g3[starti:-1] < 0) & (g3[starti+1:] > 0) )
+                assert len(g3zero_cross) >= 1
+                if returnAll:
+                    g3x0 = g3zero_cross + starti
+                else: g3x0 = g3zero_cross[0] + starti
+                g2min = g3x0
+            else:
+        #     #can do the same looking for first trough in g2
+                mins = np.flatnonzero( (g2[starti+1:-1] < g2[starti:-2]) & (g2[starti+1:-1] < g2[starti++2:]) ) + 1
+                assert len(mins) >= 1
+                if returnAll:
+                    g2min = mins + starti
+                else: g2min = mins[0] + starti
+        #     assert g2min - g3x0 <= 1
 
-            plt.figure(figsize=(10,4))
-            ax = plt.subplot(121)
-            ax.set(title=f'$x_{{{c}}}$ - G1 curve',xlabel='s',ylabel='dim')
-            for lbl,g1,sig,x0,dim,color in [
-                                     ('nbrs-of-nbrs',nofn_g1,nofn_sig,nofn_x0,nofn_dim,'m'),
-                                     ]:
-                ax.plot(lsigmas,g1,c=color,label=lbl)
-                #ax.plot([np.log10(sig),np.log10(sig)],[0,g1[x0]],c=color,ls=':',lw=2,label=f'$\sigma$={sig:.2f}')
-                ax.plot([lsigmas[0],np.log10(sig)],[g1[x0],g1[x0]],c=color,ls=':',lw=2,label=f'$d$={dim:.2f}')
-                if computeExact and lbl == 'nbrs-of-nbrs':
-                    ax.plot(lsigmas,[g1exact(s,allNNds) for s in sigmas],'r-.',lw=3,label='nofnX')
-            ax.legend()
+            #TODO: use 0x of G3 with a scipy root-finding algorithm in the interval [g2min-1,g2min+1]
+
+            return g2x0,g2min
+        def computeCellBounds(ds,boundtol = 1e-4):
+
+            #compute left lim using closest nbr
+            llim = 0; lval = np.inf
+            myd = ds[ds > 0].min()
+            while lval > boundtol:
+                llim -= .25
+                lval = np.log10(1 + np.exp(-myd/(2*(10**llim)**2)))
+            #compute right lim using furthest nbr
+            rlim = 0; rval = 0
+            myd = ds.max()
+            while np.log10(2) - rval > boundtol:
+                rlim += .25
+                rval = np.log10(1 + np.exp(-myd/(2*(10**rlim)**2)))
+
+            return llim,rlim
+        def getG12(returnSumExps=False,returnG3=False):
+            sumexps = np.sum(exps,axis=0)
+            sumdsexps = np.sum(dsexps,axis=0)
+            sumd2sexps = np.sum(d2sexps,axis=0)
+
+            den = sumexps * s2
+            num = sumdsexps
+            g1 = num/den
+
+            #g2 - closed form
+            num0 = sumd2sexps
+            num1 = num**2
+            num2 = 2*num
+
+            s4 = s2*s2
+            den0 = sumexps * s4
+            den1 = sumexps * den0
+            den2 = den
+
+            g2 = (num0/den0 - num1/den1 - num2/den2)*np.log(10)
             
-            #SHOW DATA POINTS
-            ax = plt.subplot(122)
-            ax.scatter(*data[:,:2].T,s=3)
-            ax.scatter(*data[c:c+1,:2].T,color='r',marker='o',facecolor='none',s=40)
+            
+            if not returnG3:       
+                if returnSumExps:
+                    return g1,g2,sumexps,sumdsexps,sumd2sexps
+                return g1,g2
+            
+            # g3 - closed form
+            sumd3sexps = np.sum(d3sexps,axis=0)
+            s3 = s2*sigmas
+            s7 = s4*s3
+            sumexps2 = sumexps**2
+            sumexps3 = sumexps2*sumexps
+            s6 = s4*s2
+            num_2 = num**2
+            num_3 = num_2*num
 
-            if cellNbrs is not None:
-                ax.scatter(*data[NNs,:2].T,color='g',marker='o',facecolor='none',s=40)
-            ax.scatter(*data[NofNs,:2].T,color='slategray',marker='o',facecolor='none',s=120)
+            num00 = sumd3sexps
+            den00 = sumexps*s6
+            num01 = -4*num0
+            den01 = den0
+            num02 = -num*num0
+            den02 = sumexps2*s6
 
-            ax.axis('equal')
-
-
-            plt.show()
-            print()
-    if returnSigs:
-        return NofNDims, NofNSigs
-
-    return NofNDims
-
-def knbrs(G, start, k):
-    nbrs = set([start])
-    for l in range(k):
-        nbrs = nbrs.union([nbr for n in nbrs for nbr in G[n]])
-    return nbrs
+            g3_0 = num00/den00 + num01/den01 + num02/den02
 
 
-def estimateDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, useMedian=True, useDegDims=True,
-    debugPts=[], X=None, verbose=0):
-    
+            num10 = -2*num0*num
+            den10 = sumexps2*s6
+            num11 = 4*num_2
+            den11 = sumexps2*s4
+            num12 = 2*num_3
+            den12 = sumexps3*s6
+
+            g3_1 = num10/den10 + num11/den11 + num12/den12
+
+
+            num20 = -2*num0
+            den20 = sumexps*s4
+            num21 = 2*num_2
+            den21 = sumexps2*s4
+            num22 = 4*num
+            den22 = sumexps*s2
+
+            g3_2 = num20/den20 + num21/den21 + num22/den22
+
+            g3 = (g3_0 + g3_1 + g3_2)*np.log(10)**2
+            
+            if returnSumExps:
+                return g1,g2,g3,sumexps,sumdsexps,sumd2sexps,sumd3sexps
+            return g1,g2,g3
+        
+
+            
+        N = len(NofNs_dict)
+        if subset is None:
+            subset = range(N)
+
+        cellNofNs = {}
+        if returnSigs:
+            NofNSigs = np.zeros(N)
+        NofNDims = np.zeros(N)
+
+
+        if bounds is None:    
+            bounds = np.zeros((N,2))
+            for c in subset:#range(N):
+                bounds[c] = computeCellBounds(NofNs_dict[c]['D2'],boundtol)
+        llim, rlim = bounds[:,0].min(),bounds[:,1].max()
+
+        lsigmas = np.arange(llim,rlim+deltalog,deltalog)
+        sigmas = 10**(lsigmas)
+        s2 = sigmas**2
+        ns = len(sigmas)
+
+        
+        #compute curves for n-of-ns
+        for ci,c in enumerate(subset):#range(N):
+            if verbose and ci % 250 == 0: print(ci,end=' ')
+            NofNs = NofNs_dict[c]['NofNs']
+
+
+            ds = NofNs_dict[c]['D2'] # each xi might have different no. of nbrs & n-of-nbrs
+            exps = np.array([np.exp(-d2/(2*s2)) for d2 in ds])
+            dsexps = ds[:,None] * exps
+            d2sexps = ds[:,None] * dsexps
+            
+            
+            # N-of-Ns curve
+            if computeExact:
+                d3sexps = ds[:,None] * d2sexps
+                nofn_g1,nofn_g2,nofn_g3 = getG12(returnG3=True)
+            else:
+                nofn_g1,nofn_g2 = getG12()
+                nofn_g3 = None
+
+            g2x0,g3x0 = getMark(nofn_g2,g3=nofn_g3,returnAll=highestPeaks)
+
+        
+                
+            if highestPeaks:
+                g2x0 = g2x0[np.argmax(nofn_g1[g2x0])]
+                g3x0 = np.inf#g3x0[np.argmax(nofn_g1[g3x0])] ##must be an actual max
+
+
+                
+            #x0 = g3x0 if g3x0 < g2x0 else g2x0
+            
+            if computeExact:        
+
+                allNNds = NofNs_dict[c]['D2']
+
+                if g3x0 < g2x0:
+                    s_peak = brentq(g3exact,sigmas[g3x0],sigmas[g3x0+1],(allNNds))
+                    nofn_x0 = g3x0
+
+                else:
+                    s_peak = brentq(g2exact,sigmas[g2x0],sigmas[g2x0+1],(allNNds))
+                    nofn_x0 = g2x0
+                    
+                nofn_sig = s_peak
+                nofn_dim = g1exact(s_peak,allNNds)
+            else:
+                nofn_x0 = g3x0 if g3x0 < g2x0 else g2x0
+            
+                nofn_sig = sigmas[nofn_x0]
+                nofn_dim = nofn_g1[nofn_x0]
+            if returnSigs:
+                NofNSigs[c] = nofn_sig
+            NofNDims[c] = nofn_dim
+
+            ###PLOTS
+            if c in special_points:
+                print('c',c)
+                if cellNbrs is not None:
+                    NNs = list(set(cellNbrs[c]).difference([c]))
+                    print('NNs',NNs)
+                print('NofNs',NofNs)
+                print('d2s',ds)
+
+
+
+                plt.figure(figsize=(10,4))
+                ax = plt.subplot(121)
+                ax.set(title=f'$x_{{{c}}}$ - G1 curve',xlabel='s',ylabel='dim')
+                for lbl,g1,sig,x0,dim,color in [
+                                         ('nbrs-of-nbrs',nofn_g1,nofn_sig,nofn_x0,nofn_dim,'m'),
+                                         ]:
+                    ax.plot(lsigmas,g1,c=color,label=lbl)
+                    #ax.plot([np.log10(sig),np.log10(sig)],[0,g1[x0]],c=color,ls=':',lw=2,label=f'$\sigma$={sig:.2f}')
+                    ax.plot([lsigmas[0],np.log10(sig)],[g1[x0],g1[x0]],c=color,ls=':',lw=2,label=f'$d$={dim:.2f}')
+                    if computeExact and lbl == 'nbrs-of-nbrs':
+                        ax.plot(lsigmas,[g1exact(s,allNNds) for s in sigmas],'r-.',lw=3,label='nofnX')
+                ax.legend()
+                
+                #SHOW DATA POINTS
+                ax = plt.subplot(122)
+                ax.scatter(*data[:,:2].T,s=3)
+                ax.scatter(*data[c:c+1,:2].T,color='r',marker='o',facecolor='none',s=40)
+
+                if cellNbrs is not None:
+                    ax.scatter(*data[NNs,:2].T,color='g',marker='o',facecolor='none',s=40)
+                ax.scatter(*data[NofNs,:2].T,color='slategray',marker='o',facecolor='none',s=120)
+
+                ax.axis('equal')
+
+
+                plt.show()
+                print()
+        if returnSigs:
+            return NofNDims, NofNSigs
+
+        return NofNDims
+
+    def knbrs(G, start, k):
+        nbrs = set([start])
+        for l in range(k):
+            nbrs = nbrs.union([nbr for n in nbrs for nbr in G[n]])
+        return nbrs
+
     def getRecenteredHood(xi,NofNs,pwdists2,useMedian=True,debug=False,X=None):
         hood = NofNs[xi]
         n = len(hood)
@@ -1823,11 +1864,6 @@ def estimateDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, useMe
             dists_stats  = np.empty(n,dtype='d')
             for ii,xj in enumerate(hood):
                 dists_stats[ii] = np.median(pwdists2[xj,hood])
-
-    #         dists_stats_ = pwdists2[hood][:,hood].sum(1)
-    #         amin,amin_ = dists_stats.argmin(), dists_stats_.argmin()
-    #         if amin != amin_:
-    #             print(xi,'different argmins',hood[amin],hood[amin_])
         else:
             dists_stats = pwdists2[hood][:,hood].sum(1)
         center_node = hood[dists_stats.argmin()]
@@ -1864,14 +1900,14 @@ def estimateDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, useMe
     N = A.shape[0]
     if sp.sparse.issparse(A):
         A = A.tocsr()
-    if useDegDims:
+    if returnDegDims:
         deg_dims = np.zeros(N)
     for xi in range(N):
         if sp.sparse.issparse(A):
             nbrs_dict[xi] = A[xi].indices
         else:
             nbrs_dict[xi] = np.flatnonzero(A[xi])
-        if useDegDims:
+        if returnDegDims:
             deg_dims[xi] = max(1,np.log2(len(nbrs_dict[xi])))
 
     NofNs = {xi:list(knbrs(nbrs_dict,xi,nbrhoodOrder)) for xi in range(N)}
@@ -1880,7 +1916,7 @@ def estimateDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, useMe
 
 
     for xi in range(N):
-        if verbose and xi % 100 == 0: print(xi,end=' ')
+        if verbose and xi % 250 == 0: print(xi,end=' ')
 
         if centralPtDim:
             debug = xi in debugPts
@@ -1892,39 +1928,62 @@ def estimateDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, useMe
             xiHood = NofNs[xi]
         NofNs_dict[xi]['D2'] = xiD2
         NofNs_dict[xi]['NofNs'] = xiHood
-    NofNDims = computeNofNsDims(NofNs_dict,X,highestPeaks=True,special_points=debugPts,verbose=verbose)
+    NCD_dims = computeNofNsDims(NofNs_dict,X,highestPeaks=True,special_points=debugPts,verbose=verbose)
 
     if nbrsAvgDims:
         nbrAvgDims = np.zeros(N)
-        if useDegDims:
+        if returnDegDims:
             avg_deg_dims = np.zeros(N)
         for xi in range(N):
             if len(nbrs_dict[xi]) == 0:
                 continue
 
-            nbrAvgDims[xi] = np.mean(NofNDims[nbrs_dict[xi]])
-            if useDegDims:
+            nbrAvgDims[xi] = np.mean(NCD_dims[nbrs_dict[xi]])
+            if returnDegDims:
                 avg_deg_dims[xi] = np.mean(np.floor(deg_dims[nbrs_dict[xi]]))
                 #nbrAvgDims[xi] = max(nbrAvgDims[xi], avg_dim_)
             
             if xi in debugPts:
                 print('***',xi)
                 print('nbrs:',nbrs_dict[xi])
-                print('dims:',NofNDims[nbrs_dict[xi]])
+                print('dims:',NCD_dims[nbrs_dict[xi]])
                 print('mean',nbrAvgDims[xi])
-        NofNDims = nbrAvgDims
-        if useDegDims:
+        NCD_dims = nbrAvgDims
+        if returnDegDims:
             deg_dims = avg_deg_dims
 
-    if useDegDims:
-        return NofNDims, deg_dims
-    return NofNDims
+    if returnDegDims:
+        return NCD_dims, deg_dims
+    return NCD_dims
 
 
 ############# GEODESICS
 
-def computeHeatGeodesics(K, t, chosen_pts, verbose=0):
+def computeHeatGeodesics(K, t, chosen_pts, verbose=False):
+
+    """Implements a naive version of the heat geodesics method from:
+    Crane K, Weischedel C, Wardetzky M. (2012).
+    Geodesics in heat: A new approach to computing distance based on heat flow. 
+    ACM Transactions on Graphics. arXiv preprint arXiv:1204.6216
+
+    I also used the MATLAB implementation below (for triangular meshes) as reference:
+    http://www.numerical-tours.com/matlab/meshproc_7_geodesic_poisson/
+
+    Parameters
+    ----------
+    K : weighted graph (kernel) adjacency matrix, shape (n_samples, n_samples)
+    t : diffusion time
+    chosen_pts: source points (where the heat will initially diffuse from)
+
+    Returns
+    -------
+    phi : geodesic distances, shape (n_samples,)
+    
+    """
+
     N = K.shape[0]
+
+    #https://en.wikipedia.org/wiki/Calculus_on_finite_weighted_graphs
     grad = lambda u,W: np.sqrt(W) * (np.diag(u) @ np.ones((N,N)) - np.ones((N,N)) @ np.diag(u))
     div = lambda X_,W: np.sum(np.sqrt(W)*(X_.T - X_),1)[None,:]
 
@@ -1936,6 +1995,8 @@ def computeHeatGeodesics(K, t, chosen_pts, verbose=0):
     u0 = np.zeros(N,)
     u0[chosen_pts] = 1
 
+    # not using areas for now, but could potentially be used to improve estimates
+    # based on local dimensionality, when known
     areas = np.ones(N)
     Ac = np.eye(N)*areas
     Ac_ = np.eye(N)/areas

@@ -1,24 +1,101 @@
 from time import time
 import numpy as np
 import matplotlib.pyplot as plt
-
-#from sparsifytools import *
+from matplotlib import cm
+from matplotlib.colors import ListedColormap,Normalize
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from numpy.linalg import norm
 
 #TODO: https://mathworld.wolfram.com/HyperspherePointPicking.html
 
-limbs = np.array([[257, 186], [245, 201], [263, 202], [273, 196], [277, 210], [258, 213], [253, 227], [265, 226], [282, 222], [261, 241], [275, 237], [289, 237], [273, 252], [277, 262], [288, 253], [299, 249], [299, 264], [289, 269], [244, 215], [290, 279], [302, 278], [310, 268], [291, 290], [297, 300], [307, 291], [317, 282], [321, 270], [331, 273], [331, 285], [324, 296], [312, 306], [300, 314], [311, 327], [316, 318], [328, 311], [337, 299], [346, 291], [345, 278], [360, 282], [356, 293], [350, 305], [340, 316], [333, 325], [321, 329], [330, 337], [348, 334], [350, 322], [363, 319], [360, 309], [367, 301], [380, 295], [370, 286], [314, 338], [298, 325], [298, 337], [287, 324], [274, 329], [281, 341], [291, 352], [297, 360], [278, 368], [262, 350], [254, 330], [236, 324], [237, 343], [238, 362], [257, 373], [257, 389], [235, 385], [215, 370], [213, 348], [204, 327], [188, 338], [177, 357], [192, 370], [172, 381], [184, 399], [213, 401], [212, 424], [237, 411], [224, 443], [183, 452], [183, 426], [134, 421], [139, 397], [141, 357], [163, 335], [160, 310], [126, 322], [98, 356], [111, 383], [91, 419], [119, 449], [151, 450], [155, 479], [186, 478], [210, 469], [181, 511], [137, 527], [124, 492], [82, 507], [81, 470], [36, 454], [54, 420], [57, 380], [28, 341], [67, 314], [14, 394], [314, 352], [270, 179], [254, 167], [239, 179], [235, 161], [223, 174], [229, 193], [215, 187], [224, 209], [330, 352], [344, 349], [355, 361], [363, 346], [363, 331], [378, 326], [377, 314], [387, 307], [391, 320], [342, 263], [359, 266], [373, 272], [386, 281], [393, 294], [328, 262], [314, 253], [315, 239], [307, 229], [297, 223], [296, 205], [288, 194], [289, 174], [279, 162], [264, 152], [250, 146], [213, 199], [298, 184], [235, 221], [326, 249], [304, 194], [307, 210], [370, 358], [387, 346], [377, 341], [407, 334], [399, 357], [378, 368], [383, 384], [403, 384], [409, 369], [420, 354], [436, 348], [426, 369], [427, 392], [413, 394], [394, 401], [406, 419], [423, 409], [440, 415], [448, 402], [447, 381], [456, 372], [451, 355], [461, 349], [470, 362], [461, 386], [465, 404], [452, 428], [426, 432], [393, 272], [376, 259], [391, 257], [401, 245], [412, 234], [423, 226], [434, 224], [448, 222], [461, 222], [473, 222], [490, 219], [498, 209], [502, 194], [502, 181], [495, 170], [487, 163], [477, 158], [468, 157], [456, 159], [445, 163], [432, 166], [420, 164], [412, 154]])
-limbs[76] = (limbs[76] + limbs[78] + limbs[82])/3
-limbs[82] = (limbs[83] + 2*limbs[82])/3
-limbs[74] = (limbs[74] + limbs[77])/2
+limbs = np.array([[257, 186],       [245, 201],       [263, 202],       [273, 196],       [277, 210],
+       [258, 213],       [253, 227],       [265, 226],       [282, 222],       [261, 241],      
+        [275, 237],       [289, 237],       [273, 252],       [277, 262],       [288, 253],       
+        [299, 249],       [299, 264],       [289, 269],       [244, 215],       [290, 279],       
+        [302, 278],       [310, 268],       [291, 290],       [297, 300],       [307, 291],       
+        [317, 282],       [321, 270],       [331, 273],       [331, 285],       [324, 296],       
+        [312, 306],       [300, 314],       [311, 327],       [316, 318],       [328, 311],       
+        [337, 299],       [346, 291],       [345, 278],       [360, 282],       [356, 293],       
+        [350, 305],       [340, 316],       [333, 325],       [321, 329],       [330, 337],       
+        [348, 334],       [350, 322],       [363, 319],       [360, 309],       [367, 301],       
+        [380, 295],       [370, 286],       [314, 338],       [298, 325],       [298, 337],       
+        [287, 324],       [274, 329],       [281, 341],       [291, 352],       [297, 360],       
+        [278, 368],       [262, 350],       [254, 330],       [236, 324],       [237, 343],       
+        [238, 362],       [257, 373],       [257, 389],       [235, 385],       [215, 370],       
+        [213, 348],       [204, 327],       [188, 338],       [177, 357],       [202, 385],       
+        [172, 381],       [193, 416],       [213, 401],       [212, 424],       [237, 411],       
+        [224, 443],       [183, 452],       [166, 424],       [134, 421],       [139, 397],       
+        [141, 357],       [163, 335],       [160, 310],       [126, 322],       [ 98, 356],       
+        [111, 383],       [ 91, 419],       [119, 449],       [151, 450],       [155, 479],       
+        [186, 478],       [210, 469],       [181, 511],       [137, 527],       [124, 492],       
+        [ 82, 507],       [ 81, 470],       [ 36, 454],       [ 54, 420],       [ 57, 380],       
+        [ 28, 341],       [ 67, 314],       [ 14, 394],       [314, 352],       [270, 179],       
+        [254, 167],       [239, 179],       [235, 161],       [223, 174],       [229, 193],       
+        [215, 187],       [224, 209],       [330, 352],       [344, 349],       [355, 361],       
+        [363, 346],       [363, 331],       [378, 326],       [377, 314],       [387, 307],       
+        [391, 320],       [342, 263],       [359, 266],       [373, 272],       [386, 281],       
+        [393, 294],       [328, 262],       [314, 253],       [315, 239],       [307, 229],       
+        [297, 223],       [296, 205],       [288, 194],       [289, 174],       [279, 162],       
+        [264, 152],       [250, 146],       [213, 199],       [298, 184],       [235, 221],       
+        [326, 249],       [304, 194],       [307, 210],       [370, 358],       [387, 346],       
+        [377, 341],       [407, 334],       [399, 357],       [378, 368],       [383, 384],       
+        [403, 384],       [409, 369],       [420, 354],       [436, 348],       [426, 369],       
+        [427, 392],       [413, 394],       [394, 401],       [406, 419],       [423, 409],       
+        [440, 415],       [448, 402],       [447, 381],       [456, 372],       [451, 355],       
+        [461, 349],       [470, 362],       [461, 386],       [465, 404],       [452, 428],       
+        [426, 432],       [393, 272],       [376, 259],       [391, 257],       [401, 245],       
+        [412, 234],       [423, 226],       [434, 224],       [448, 222],       [461, 222],       
+        [473, 222],       [490, 219],       [498, 209],       [502, 194],       [502, 181],       
+        [495, 170],       [487, 163],       [477, 158],       [468, 157],       [456, 159],       
+        [445, 163],       [432, 166],       [420, 164],       [412, 154]])
 
-horseshoe = np.array([[262.0, 93.0], [243.0, 93.0], [245.0, 118.0], [217.0, 120.0], [226.0, 139.0], [218.0, 104.0], [181.0, 128.0], [195.0, 140.0], [211.0, 159.0], [181.0, 172.0], [174.0, 157.0], [195.0, 168.0], [160.0, 169.0], [159.0, 146.0], [154.0, 190.0], [179.0, 198.0], [193.0, 183.0], [193.0, 204.0], [170.0, 225.0], [158.0, 217.0], [163.0, 202.0], [139.0, 202.0], [142.0, 178.0], [144.0, 224.0], [147.0, 242.0], [161.0, 253.0], [176.0, 241.0], [189.0, 219.0], [197.0, 240.0], [203.0, 229.0], [182.0, 255.0], [180.0, 271.0], [197.0, 279.0], [200.0, 269.0], [205.0, 254.0], [218.0, 248.0], [230.0, 245.0], [229.0, 258.0], [218.0, 268.0], [217.0, 284.0], [230.0, 288.0], [241.0, 279.0], [244.0, 272.0], [258.0, 261.0], [241.0, 258.0], [257.0, 281.0], [248.0, 294.0], [265.0, 273.0], [271.0, 283.0], [284.0, 280.0], [296.0, 285.0], [307.0, 283.0], [317.0, 286.0], [327.0, 293.0], [337.0, 299.0], [329.0, 286.0], [329.0, 272.0], [340.0, 272.0], [347.0, 288.0], [369.0, 288.0], [359.0, 279.0], [358.0, 294.0], [375.0, 274.0], [358.0, 265.0], [346.0, 254.0], [373.0, 253.0], [363.0, 240.0], [385.0, 253.0], [395.0, 241.0], [385.0, 231.0], [388.0, 264.0], [405.0, 230.0], [397.0, 219.0], [374.0, 221.0], [386.0, 204.0], [408.0, 206.0], [401.0, 195.0], [419.0, 195.0], [416.0, 172.0], [403.0, 178.0], [393.0, 186.0], [424.0, 184.0], [398.0, 164.0], [412.0, 151.0], [389.0, 145.0], [390.0, 123.0], [374.0, 107.0], [381.0, 95.0], [396.0, 90.0], [394.0, 105.0], [403.0, 100.0], [409.0, 120.0], [401.0, 128.0], [421.0, 133.0], [409.0, 137.0], [424.0, 150.0], [380.0, 119.0], [400.0, 148.0], [427.0, 162.0], [418.0, 213.0], [389.0, 132.0], [207.0, 143.0], [200.0, 120.0], [188.0, 156.0], [150.0, 161.0]])
-horseshoe[12] = (2*horseshoe[9] + horseshoe[14] + horseshoe[22])/4
+horseshoe = np.array([[262. ,  93. ],  [243. ,  93. ],  [245. , 118. ],  [217. , 120. ],  [226. , 139. ],       
+    [218. , 104. ],       [181. , 128. ],       [195. , 140. ],       [211. , 159. ],       [181. , 172. ],   
+        [174. , 157. ],       [195. , 168. ],       [164.5, 178. ],       [159. , 146. ],       [154. , 190. ],
+               [179. , 198. ],       [193. , 183. ],       [193. , 204. ],       [170. , 225. ],       
+               [158. , 217. ],       [163. , 202. ],       [139. , 202. ],       [142. , 178. ],       
+               [144. , 224. ],       [147. , 242. ],       [161. , 253. ],       [176. , 241. ],       
+               [189. , 219. ],       [197. , 240. ],       [203. , 229. ],       [182. , 255. ],       
+               [180. , 271. ],       [197. , 279. ],       [200. , 269. ],       [205. , 254. ],       
+               [218. , 248. ],       [230. , 245. ],       [229. , 258. ],       [218. , 268. ],       
+               [217. , 284. ],       [230. , 288. ],       [241. , 279. ],       [244. , 272. ],       
+               [258. , 261. ],       [241. , 258. ],       [257. , 281. ],       [248. , 294. ],       
+               [265. , 273. ],       [271. , 283. ],       [284. , 280. ],       [296. , 285. ],       
+               [307. , 283. ],       [317. , 286. ],       [327. , 293. ],       [337. , 299. ],       
+               [329. , 286. ],       [329. , 272. ],       [340. , 272. ],       [347. , 288. ],       
+               [369. , 288. ],       [359. , 279. ],       [358. , 294. ],       [375. , 274. ],       
+               [358. , 265. ],       [346. , 254. ],       [373. , 253. ],       [363. , 240. ],       
+               [385. , 253. ],       [395. , 241. ],       [385. , 231. ],       [388. , 264. ],       
+               [405. , 230. ],       [397. , 219. ],       [374. , 221. ],       [386. , 204. ],       
+               [408. , 206. ],       [401. , 195. ],       [419. , 195. ],       [416. , 172. ],       
+               [403. , 178. ],       [393. , 186. ],       [424. , 184. ],       [398. , 164. ],       
+               [412. , 151. ],       [389. , 145. ],       [390. , 123. ],       [374. , 107. ],       
+               [381. ,  95. ],       [396. ,  90. ],       [394. , 105. ],       [403. , 100. ],       
+               [409. , 120. ],       [401. , 128. ],       [421. , 133. ],       [409. , 137. ],       
+               [424. , 150. ],       [380. , 119. ],       [400. , 148. ],       [427. , 162. ],       
+               [418. , 213. ],       [389. , 132. ],       [207. , 143. ],       [200. , 120. ],       
+               [188. , 156. ],       [150. , 161. ]])
 
+plasma_clrs = [(0.9411764705882353, 0.9764705882352941, 0.12941176470588237),
+ (0.9882352941176471, 0.7078431372549019, 0.1882352941176471),
+ (0.9294117647058824, 0.4745098039215686, 0.3254901960784314),
+ (0.7941176470588235, 0.2784313725490196, 0.4725490196078431),
+ (0.611764705882353, 0.09019607843137255, 0.6196078431372549),
+ (0.3607843137254902, 0.00784313725490196, 0.6411764705882353),
+ (0.050980392156862744, 0.03137254901960784, 0.5294117647058824)]
+nclrs = len(plasma_clrs)
+frac = int(256/nclrs)
 
-def plot2dwithColorbar(X,colors=None,f_ax=None,axisEqual=True,noTicks=True,colorbar=False,cmap='viridis',s=10,
+newcolors = []
+for i,clr in enumerate(plasma_clrs):
+    if i == nclrs-1 and frac*nclrs < 256:
+        frac += 256-frac*nclrs
+    newcolors += [clr]*frac
+assert len(newcolors) == 256
+plasma7r_cmp = ListedColormap(newcolors)
+
+def plot2dScatter(X,colors=None,f_ax=None,axisEqual=True,noTicks=True,colorbar=False,cmap=None,s=10,
     barlims=None,axLabels=True,**kwargs):
     X = X[:,:2]
     if f_ax is None:
@@ -42,8 +119,7 @@ def plot2dwithColorbar(X,colors=None,f_ax=None,axisEqual=True,noTicks=True,color
         #cbar.ax.tick_params(labelsize=8) 
     return ax
 
-from matplotlib import cm
-from matplotlib.colors import ListedColormap,Normalize
+
 def clipped_cmap(cmap_name, vmin, vmax, vmin_clip=None, vmax_clip=None):
     """
     Return a clipped but color-mapping preserving Norm and Colormap.
@@ -67,7 +143,7 @@ def clipped_cmap(cmap_name, vmin, vmax, vmin_clip=None, vmax_clip=None):
     new_norm = Normalize(vmin_clip, vmax_clip)
     return new_norm, new_cmap
 
-def plot3dwithColorbar(X,colors=None,f_ax=None,figsize=(7,7),colorbar=False,axisEqual=True,
+def plot3dScatter(X,colors=None,f_ax=None,figsize=(7,7),colorbar=False,axisEqual=True,
                        noTicks=True,cmap='viridis',s=5,colorbar_lbl='',barlims=None,angle=(40,60),
                        depthshade=False,axLabels=True,myAxisScl=None,**kwargs):
     X = X[:,:3] - X[:,:3].mean(0)
@@ -161,6 +237,10 @@ def getBaseX(side,dim,sampling,strict_side=True,seed=0):
     return baseX
 
 def ndtrigrid(side,Ndim,step=1,strict_side=True,centering=True):
+
+    # ported to python from:
+    # https://www.mathworks.com/matlabcentral/fileexchange/73041-n-dimension-regular-triangular-grid
+
     from numpy import sqrt,reshape,floor,ones,zeros
 
     #umax = side/2.; umin = -umax
@@ -283,7 +363,7 @@ def dset_noisycatcurve(arclen=2,a=.8,N=100,seed=0,plot=False):
     
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
 
     return {'X':data,'c':colors,'2d_coords':[0,1]}
 
@@ -311,7 +391,7 @@ def dset_noisycatplane(arclen=1.5,Zlen=2,a=.2,N=1000,seed=0,plot=False):
 
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
 
     return {'X':data,'c':colors,'2d_coords':[0,2]}
 
@@ -341,7 +421,7 @@ def dset_gridcatplane(arclen=1.5,Zlen=2,a=.2,n=13,noise_std=0,seed=0,plot=False)
 
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
     
     return {'X':data,'c':colors,'2d_coords':[0,2], 'Y':Y}
 
@@ -368,7 +448,7 @@ def dset_swisscheese(params = [(1,.35,-1.25,.35),
     if plot:
         print(data.shape)
         plt.imshow(probs); plt.show()
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
 
     return {'X':data,'c':colors,'2d_coords':[0,1]}
 
@@ -417,7 +497,7 @@ def dset_dumbbell2d(step=.15,startd=-.75,endd=2.,sig=.5,scl=1.25,noise_std=0,plo
     colors = Z
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
 
     return {'X':data,'c':colors,'2d_coords':[1,2]}
 
@@ -521,7 +601,7 @@ def dset_crown(radius = 1, scale = 2., s=.5, step = .05,noise_std = 0.025,seed=0
 
 def dset_spintop(start=-1.5, stop=.75,scale = 1/4., s=.5, step = .075,noise_std = 0.025,seed=0,plot=False):
 
-    #maxrs = np.r_[np.arange(0,np.round(1+step,2),step)]#,np.arange(1,-step,-step)]
+
     ds = np.arange(start,stop+step,step)
     maxrs = scale*np.exp(-ds**2/(2*s**2))
 
@@ -585,14 +665,12 @@ def dset_ring(param_noise = True,gauss_noise_std = 0,seed = 0,N = 100,plot=False
     
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
 
     return {'X':data,'c':colors,'2d_coords':[0,1]}
 
-#https://pydiffmap.readthedocs.io/en/master/jupyter%20notebook%20tutorials/Swiss_Roll/Swiss_Roll.html
 # set parameters
 def dset_spiral(global_noise_std=0,m=300,seed=10,normal_noise=0,length_phi=15,plot=False):
-    length_phi = 15   #length of spiral in angular direction
 
     np.random.seed(seed)
     # create dataset
@@ -609,10 +687,9 @@ def dset_spiral(global_noise_std=0,m=300,seed=10,normal_noise=0,length_phi=15,pl
     colors = phi
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
     return {'X':data,'c':colors,'2d_coords':[0,1]}
 
-#https://pydiffmap.readthedocs.io/en/master/jupyter%20notebook%20tutorials/Swiss_Roll/Swiss_Roll.html
 # set parameters
 def dset_gridspiral(noise_std=.01,global_noise_std=0,m=200,seed=10,normal_noise=0,length_phi=15,plot=False):
     # length_phi = 15   #length of spiral in angular direction
@@ -636,11 +713,11 @@ def dset_gridspiral(noise_std=.01,global_noise_std=0,m=200,seed=10,normal_noise=
     colors = phi
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
 
     return {'X':data,'c':colors,'2d_coords':[0,1]}
 
-
+#https://pydiffmap.readthedocs.io/en/master/jupyter%20notebook%20tutorials/Swiss_Roll/Swiss_Roll.html
 def dset_swissroll(m=2000,length_phi=15,length_Z=15,sigma=0.1,scale=1/6.,plot=False):
     # set parameters
     # length_phi = 15   #length of swiss roll in angular direction
@@ -692,7 +769,7 @@ def dset_2dGaussian(cluster_ns = [100,100],cluster_stds = [.5,.75],centers=None,
     colors = np.zeros(sum(cluster_ns))
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
     return {'X':data,'c':colors,'2d_coords':[0,1]}
 
 def dset_2dplane(sideNx = 1., nPointsX=15,sideNy=1., nPointsY=15, param_noise=False,
@@ -708,15 +785,91 @@ def dset_2dplane(sideNx = 1., nPointsX=15,sideNy=1., nPointsY=15, param_noise=Fa
         Y = np.linspace(-sideNy,sideNy,nPointsY)
         X = np.tile(X,nPointsY)
         Y = np.repeat(Y,nPointsX)
-    # Z = np.zeros(nPointsX)
-    # Z = np.tile(Z,nPointsX)
+
     line = np.concatenate([X.ravel()[:,None],Y.ravel()[:,None]],1)#,Z.ravel()[:,None]],1)
     data = line + np.random.random(line.shape)*gauss_noise_std
     data -= data.mean(0)
     colors = X
     if plot:
         print(data.shape)
-        plot2dwithColorbar(data,colors); plt.show()
+        plot2dScatter(data,colors); plt.show()
 
     return {'X':data,'c':colors,'2d_coords':[0,1]}
+
+def dset_stingray(plot=False):
+    
+    """This is a dataset created to look like a stingray, with a 2-d body and a 1-d tail"""
+
+    from scipy.spatial.distance import squareform, pdist
+    
+    #form body by uniformly sampling points under cropped gaussian curves
+    gauss = lambda x,s: np.exp(-x**2/s**2)
+    body_widths = np.r_[gauss(np.linspace(-.4,0,15),.25),gauss(np.linspace(0,2,30),1)]
+    body_widths -= body_widths.min()
+    body_y = np.linspace(-.4,2,len(body_widths))
+    body_y -= body_y.min()
+    xrng = body_y.ptp()
+    body_y /= xrng
+    body_widths /= xrng
+
+    #form tail from a piece of spiral
+    np.random.seed(0)
+    n = 40
+    i = np.arange(n)
+    th = np.linspace(1.05*np.pi/3,np.pi,n)
+    r = np.cos(th) + 1
+    scl = .3
+    x, y = r*scl*np.cos(th), r*scl*np.sin(th)
+    llim, rlim = 0,n
+    tail_x = -x[llim:rlim]*2 + body_y.max() + (body_y[-1]-body_y[-2])
+    tail_y = y[llim:rlim]
+
+    tail_x = tail_x[::-1]
+    tail_y = tail_y[::-1]
+
+    tailX = np.hstack([tail_x[:,None],tail_y[:,None]])
+    D1 = squareform(pdist(tailX))
+    delta_tail = np.mean(np.diag(D1,k=1))*1.75
+
+    #make sampling approximately uniform along tail
+    to_del = []
+    for i in range(1,n-1):
+        for prev in range(i-1,-1,-1):
+            if prev not in to_del:
+                break
+        if D1[i,prev] < delta_tail and D1[i,i+1] < delta_tail:
+            to_del.append(i)
+    tailX = np.delete(tailX,to_del,axis=0)
+
+    tailX = tailX[:15]
+
+    #spread out body points
+    xsamples = len(body_y)
+    pts = []
+    for xi,x in enumerate(body_y[:-1]):
+        if xi % 2 == 1: continue
+        h = body_widths[xi]
+        ysamples = max(1,int(round(h*xsamples)))
+        yvals = np.linspace(-h,h,ysamples)
+        pts += list(zip([x]*ysamples,yvals))
+    #append tail
+    pts += list(tailX)
+    pts = np.array(pts)
+    
+    #subsample to add deletion noise
+    np.random.seed(1)
+    pct = .2
+    N = pts.shape[0]
+    sub = np.random.choice(range(N),int(pct*N),False)
+    data = np.delete(pts,sub,axis=0)
+    N = data.shape[0]
+    colors = None
+
+    if plot:
+        print(data.shape)
+        plot2dScatter(data,colors); plt.show()
+
+    return {'X':data,'c':colors,'2d_coords':[0,1]}
+
+
 

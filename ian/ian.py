@@ -1047,9 +1047,9 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
                 print(f'! Distribution is not yet centered (median = {mu:.2f} >> 1). Keep pruning...')
             n_below = (nonz_stats < (1 + median_tol)).sum()
             n_to_prune = nonz_stats.size - 2*n_below
-            assert n_to_prune > len(to_be_pruned)
-            #add all those points preventing the median from being close to 1
-            to_be_pruned = np.argsort(stats)[-n_to_prune:][::-1]
+            if n_to_prune > len(to_be_pruned):
+                #add all those points preventing the median from being close to 1
+                to_be_pruned = np.argsort(stats)[-n_to_prune:][::-1]
 
         if len(to_be_pruned) == 0:
 

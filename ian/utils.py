@@ -212,16 +212,26 @@ def plotWeightedGraph(myX, K, nodecolors=None, nodecmap=None, s=5, edge_width=1,
         ax.set(xticks=[], yticks=[])
     return f,ax
 
-def getD2(X,square=True, sqdists=True):
-    d2s = pdist(X, 'sqeuclidean' if sqdists else 'euclidean')
+def pwdists(X, square=True, sqdists=False):
+
+    """Get pairwise Euclidean distances from an N-by-p data matrix.
+    A square matrix is returned if `square` is True (default).
+    Squared distances are returned if `sqdists` is True. """
+
+    ds = pdist(X, 'sqeuclidean' if sqdists else 'euclidean')
     if square:
-        return squareform(d2s)
-    return d2s
+        return squareform(ds)
+    return ds
 
 
-def getD1k(D1,k,skip_self=0,sqdists=False):
-    assert int(skip_self) in [0,1]
+def knndists(D1, k, skip_self=False, sqdists=False):
+
+    """Get an N-by-k matrix of distances to k nearest neighbors from either
+    an N-by-p data matrix or an N-by-N matrix of (non-squared) distances."""
+
+    assert type(skip_self) == bool
     skip_self = int(skip_self)
+
     if D1.shape[1] != D1.shape[0]:
         #assume data matrix
         X = D1

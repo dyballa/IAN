@@ -633,7 +633,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
                     'max_nbrhood_size chosen includes all points. Please switch to exact method.'
                     )
 
-                D1k,nbr_indices = getD1k(X, max_nbrhood_size, 1)
+                D1k,nbr_indices = knndists(X, max_nbrhood_size, 1)
 
 
             elif method == 'approximate-precomputed':
@@ -1289,7 +1289,7 @@ def getSigmasTuneC(C_tuning, curr_C, cinfo, weighted_edges, FN_D1s, obj, sum_wei
 
         if obj == 'greedy':
             #defining updating function to be possibly used again in part 2
-            base_sigmas = greedySplitting(weighted_edges, FN_D1s, 1, verbose=int(optverbose))
+            base_sigmas = greedySplitting(weighted_edges, FN_D1s.astype('float32'), 1, verbose=int(optverbose))
             def getNewSigmas(Cval):
                 return Cval*base_sigmas
 

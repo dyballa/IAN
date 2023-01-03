@@ -122,12 +122,30 @@ cpdef computeGabriel64(
 cpdef np.ndarray[np.float32_t, ndim=1] greedySplitting(
         dict weighted_edges, np.ndarray[np.float32_t, ndim=1] r_FNs, float C=1.,
         int verbose=0):
+    """ Greedy algorithm for computing optimal individual kernel scales. 
+    (loosely approximates what is achieved by the linear program 
+    from the IAN kernel algorithm, but considerably faster)
+    Parameters
+    ----------
+    weighted_edges : dict
+        Python dictionary with edge (i,j) as key and distance(i,j) as value
+    r_FNs : ndarray, shape (n_samples,)
+        A list containing the distance to the furthest neighbor of each data point
+    C: float
+        The C-connectivity parameter described in the IAN algorithm.
+    verbose: int
+        Prints outs how many nodes have been processed, in intervals given by max(verbose,100).
 
+    Returns
+    -------
+    A : ndarray, shape (n_samples,)
+        A list containing the individual scales computed by the algorithm.
+    """
 
     cdef unsigned long N = r_FNs.size
     
 
-    cdef np.ndarray[np.float32_t, ndim=1] sigmas = np.zeros(N, dtype=np.float64)
+    cdef np.ndarray[np.float32_t, ndim=1] sigmas = np.zeros(N, dtype=np.float32)
     cdef double rij, sisj, eps
     cdef unsigned long cc, xi, xj
     cdef int xi_exceeds_FN, xj_exceeds_FN
@@ -187,8 +205,25 @@ cpdef np.ndarray[np.float32_t, ndim=1] greedySplitting(
 cpdef np.ndarray[np.float64_t, ndim=1] greedySplitting64(
         dict weighted_edges, np.ndarray[np.float64_t, ndim=1] r_FNs, float C,
         int verbose=0):
+    """ Greedy algorithm for computing optimal individual kernel scales. 
+    (loosely approximates what is achieved by the linear program 
+    from the IAN kernel algorithm, but considerably faster)
+    Parameters
+    ----------
+    weighted_edges : dict
+        Python dictionary with edge (i,j) as key and distance(i,j) as value
+    r_FNs : ndarray, shape (n_samples,)
+        A list containing the distance to the furthest neighbor of each data point
+    C: float
+        The C-connectivity parameter described in the IAN algorithm.
+    verbose: int
+        Prints outs how many nodes have been processed, in intervals given by max(verbose,100).
 
-
+    Returns
+    -------
+    A : ndarray, shape (n_samples,)
+        A list containing the individual scales computed by the algorithm.
+    """
     cdef unsigned long N = r_FNs.size
     
 
@@ -255,7 +290,8 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
         int verbose):
     """Binary search for sigmas of conditional Gaussians.
     This approximation reduces the computational complexity from O(N^2) to
-    O(uN).
+    O(uN). Code adapted from the scikit-learn package: https://scikit-learn.org/
+
     Parameters
     ----------
     sqdistances : array-like, shape (n_samples, n_neighbors)
@@ -361,7 +397,7 @@ cpdef np.ndarray[np.float32_t, ndim=1] get_tsne_sigmas(
         int verbose):
     """Binary search for sigmas of conditional Gaussians.
     This approximation reduces the computational complexity from O(N^2) to
-    O(uN).
+    O(uN). Code adapted from the scikit-learn package: https://scikit-learn.org/
     Parameters
     ----------
     sqdistances : array-like, shape (n_samples, n_neighbors)

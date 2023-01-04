@@ -452,7 +452,7 @@ def diffusionMapSparseK(K, n_components, alpha=0, t=1, lambdaScale=True,
     return diffmap[:,1:],lambdas[1:]
 
 def diffusionMapK(K, n_components, alpha=0, t=1, tol=1e-8, lambdaScale=True,
-    returnPhi=False, returnOrtho=False, unitNorm=False, sparse_eigendecomp=True):
+    returnPhi=False, returnOrtho=False, unitNorm=False, sparse_eigendecomp=True, use_svd=True):
     """ alpha: 0 (markov), 1 (laplace-beltrami), 0.5 (fokker-plank) """
 
     assert alpha >= 0

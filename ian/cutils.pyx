@@ -153,27 +153,29 @@ cpdef np.ndarray[np.float32_t, ndim=1] greedySplitting(
     eps = 10*np.finfo(np.float32).eps
     cdef double FEAS_TOL = 1e-8
 
-    if verbose: verbose = max(verbose,100) #use verbose val as step in loggin # of nodes seen 
+    if verbose:
+        verbose = max(verbose,100) #use verbose val as step in loggin # of nodes seen 
+        sys.stdout.write("Greedy scale optimization: ")
 
     cc = 0
     for (xi,xj),rij in weighted_edges.items():
         cc += 1
         if verbose and (cc % verbose == 0 or cc == N):
-                    sys.stdout.write("%d " % cc)
+            sys.stdout.write("%d " % cc)
 
         sisj = sigmas[xi] * sigmas[xj]
 
 
         if sigmas[xi] + sigmas[xj] == 0: #neither assigned
-            #"split" the distance between the two sigmas
+            #evenly "split" (C*rij)**2 between the two sigmas
             sigmas[[xi,xj]] = C*rij
 
         else:
             if sisj > 0: #both_assigned
-                if sisj < (C*rij)**2 - eps:#if they dont cover this edge
-                    #augment them equally so they cover this edge
+                if sisj < (C*rij)**2 - eps:#if they dont C-cover this edge
+                    #augment them equally so they cover it
                     a = C*rij/math.sqrt(sisj)
-                    #assert a >= 1
+                    #assert a >= 1 OK
                     sigmas[xi] = sigmas[xi] * a
                     sigmas[xj] = sigmas[xj] * a
             else:
@@ -182,15 +184,15 @@ cpdef np.ndarray[np.float32_t, ndim=1] greedySplitting(
                 elif sigmas[xj] == 0:
                     sigmas[xj] = (C*rij)**2/sigmas[xi]
 
-            xi_exceeds_FN = int(sigmas[xi] > r_FNs[xi] + FEAS_TOL)
-            xj_exceeds_FN = int(sigmas[xj] > r_FNs[xj] + FEAS_TOL)
-            assert not (xi_exceeds_FN and xj_exceeds_FN)
+            si_exceeds_FN = int(sigmas[xi] > r_FNs[xi] + FEAS_TOL)
+            sj_exceeds_FN = int(sigmas[xj] > r_FNs[xj] + FEAS_TOL)
+            #assert not (si_exceeds_FN and sj_exceeds_FN) OK
             
-            if xi_exceeds_FN:
+            if si_exceeds_FN:
                 sisj = sigmas[xi] * sigmas[xj]
                 sigmas[xi] = r_FNs[xi]
                 sigmas[xj] = sisj/sigmas[xi]
-            elif xj_exceeds_FN:
+            elif sj_exceeds_FN:
                 sisj = sigmas[xi] * sigmas[xj]
                 sigmas[xj] = r_FNs[xj]
                 sigmas[xi] = sisj/sigmas[xj]
@@ -199,86 +201,6 @@ cpdef np.ndarray[np.float32_t, ndim=1] greedySplitting(
         print("Done.")
     return sigmas
 
-# decorators
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cpdef np.ndarray[np.float64_t, ndim=1] greedySplitting64(
-        dict weighted_edges, np.ndarray[np.float64_t, ndim=1] r_FNs, float C,
-        int verbose=0):
-    """ Greedy algorithm for computing optimal individual kernel scales. 
-    (loosely approximates what is achieved by the linear program 
-    from the IAN kernel algorithm, but considerably faster)
-    Parameters
-    ----------
-    weighted_edges : dict
-        Python dictionary with edge (i,j) as key and distance(i,j) as value
-    r_FNs : ndarray, shape (n_samples,)
-        A list containing the distance to the furthest neighbor of each data point
-    C: float
-        The C-connectivity parameter described in the IAN algorithm.
-    verbose: int
-        Prints outs how many nodes have been processed, in intervals given by max(verbose,100).
-
-    Returns
-    -------
-    A : ndarray, shape (n_samples,)
-        A list containing the individual scales computed by the algorithm.
-    """
-    cdef unsigned long N = r_FNs.size
-    
-
-    cdef np.ndarray[np.float64_t, ndim=1] sigmas = np.zeros(N, dtype=np.float64)
-    cdef double rij, sisj, eps
-    cdef unsigned long cc, xi, xj
-    cdef int xi_exceeds_FN, xj_exceeds_FN
-
-    eps = 10*np.finfo(np.float64).eps
-    cdef double FEAS_TOL = 1e-8
-
-    if verbose: verbose = max(verbose,100) #use verbose val as step in loggin # of nodes seen 
-
-    cc = 0
-    for (xi,xj),rij in weighted_edges.items():
-        cc += 1
-        if verbose and (cc % verbose == 0 or cc == N):
-                    sys.stdout.write("%d " % cc)
-
-        sisj = sigmas[xi] * sigmas[xj]
-
-
-        if sigmas[xi] + sigmas[xj] == 0: #neither assigned
-            sigmas[[xi,xj]] = C*rij
-
-        else:
-            if sisj > 0: #both_assigned
-                if sisj < (C*rij)**2 - eps:#if they dont cover this edge
-                    #fix them by augmenting them equally so they cover this edge
-                    a = C*rij/math.sqrt(sisj)
-                    #assert a >= 1
-                    sigmas[xi] = sigmas[xi] * a
-                    sigmas[xj] = sigmas[xj] * a
-            else:
-                if sigmas[xi] == 0:
-                    sigmas[xi] = (C*rij)**2/sigmas[xj]
-                elif sigmas[xj] == 0:
-                    sigmas[xj] = (C*rij)**2/sigmas[xi]
-
-            xi_exceeds_FN = int(sigmas[xi] > r_FNs[xi] + FEAS_TOL)
-            xj_exceeds_FN = int(sigmas[xj] > r_FNs[xj] + FEAS_TOL)
-            assert not (xi_exceeds_FN and xj_exceeds_FN)
-
-            if xi_exceeds_FN:
-                sisj = sigmas[xi] * sigmas[xj]
-                sigmas[xi] = r_FNs[xi]
-                sigmas[xj] = sisj/sigmas[xi]
-            elif xj_exceeds_FN:
-                sisj = sigmas[xi] * sigmas[xj]
-                sigmas[xj] = r_FNs[xj]
-                sigmas[xi] = sisj/sigmas[xj]
-
-    if verbose:
-        print("Done.")
-    return sigmas
 
 
 cdef float EPSILON_DBL = 1e-8

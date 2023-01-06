@@ -11,23 +11,23 @@ from collections import deque
 from ian.utils import subps, getTri, plotDataGraph
 from ian.cutils import computeGabriel, greedySplitting
 
-solver_opts = {'SCS':dict(use_indirect=True,eps=1e-3), 'ECOS':dict(abstol=1e-3,reltol=1e-3),
+solver_opts = {'SCS':dict(use_indirect=True,eps=1e-5), 'ECOS':dict(abstol=1e-5,reltol=1e-5),
        'GUROBI':dict(FeasibilityTol=1e-5,OptimalityTol=1e-5)}
 
-def getSparseMultiScaleK(D2, optSigs, sig2scl=2., disc_pts=[], tol=1e-8, degrees=None, 
+def getSparseMultiScaleK(D2, optScales, sig2scl=1., disc_pts=[], tol=1e-8, degrees=None, 
                             debugPts=[],returnSparse=True,symmetrize=True,verbose=False):
 
-    N = len(optSigs)
+    N = len(optScales)
     
     disc_pts = set(disc_pts)
     
     try:
-        assert np.all(np.flatnonzero(np.isclose(optSigs,0)) == sorted(disc_pts))
+        assert np.all(np.flatnonzero(np.isclose(optScales,0)) == sorted(disc_pts))
     except:
         print('Zero-sigmas assertion in getSparseMultiScaleK failed')
-        print(np.flatnonzero(np.isclose(optSigs,0)), sorted(disc_pts))
+        print(np.flatnonzero(np.isclose(optScales,0)), sorted(disc_pts))
     
-    nonzero_sigs = optSigs.copy()
+    nonzero_sigs = optScales.copy()
     nonzero_sigs[np.isclose(nonzero_sigs,0)] = 1
     
     if verbose:
@@ -76,14 +76,19 @@ def getSparseMultiScaleK(D2, optSigs, sig2scl=2., disc_pts=[], tol=1e-8, degrees
     return K
 
 def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
-    # Do not symmetrize the initial k-NN graph (during Gabriel computation, above),
-    # except for nearest neighbors. This possibly improves the approximate graph,
-    # according to the paper:
-    # This may help the Gabriel graph since with partial information about distances
-    # it is possible to connect points that would violate the Gabriel rule.
-    # The authors suggest adding edges from the minimum-spanning tree to prevent it
-    # from being disconnected. Here we implement adaptations of two methods, 
-    # `MST-all` and `MST-min`, that are described in the paper.
+
+    """
+    Does not symmetrize the initial k-NN graph (during Gabriel computation, above),
+    except for nearest neighbors. This possibly improves the approximate graph,
+    according to the paper:
+    Dalmia, A., & Sia, S. (2021). Clustering with UMAP: Why and How Connectivity Matters. 
+    arXiv preprint arXiv:2108.05525.
+    This may also help the Gabriel graph since, when using partial information about
+    distances, it is possible to connect points that actually violate the Gabriel rule.
+    The authors suggest adding edges from the minimum-spanning tree to prevent it
+    from being disconnected. Here we implement adaptations of two methods described in 
+    the paper above, namely `MST-all` and `MST-min`(slightly modified).
+    """
     
     eps = 10*np.finfo(D2.dtype).eps
     def connectGabriel(xi,xj):
@@ -296,8 +301,10 @@ def getVolumeRatios(degrees,D2,sigmas,wG=None,debugPts=[],verbose=False,sig2scl=
             print(f"  x{xi} d_i {d_i}, (sig={sig:.2f}): delta_i={wij_sum:.2f}/{d_i_}={ratio:.2f} / correction=(sqrt({sig2scl:.1f}pi)/2)^{dim_:.2f} = {corr:.2f} --> delta_i' = {ratios[xi]:.2f}")
     return np.array(ratios)
 
-def getMuStdev(vals,stdev_method):
+def getMuStdev(vals, stdev_method):
+
     n = len(vals)
+
     if stdev_method == 'mean':
         return np.mean(vals)
 
@@ -312,24 +319,16 @@ def getMuStdev(vals,stdev_method):
         mu = np.median(vals)
         stdev = median_abs_deviation(vals,scale='normal')
 
-    elif stdev_method == 'q1q3':
+    elif stdev_method == 'IQR':
         q1,q2,q3 = np.percentile(vals,[25,50,75])
         mu = q2
-        stdev = q3 - q2 + 1.5*(q3-q1)
-        assert nstds == 1
+        stdev = q3 - q1
 
-    elif stdev_method == 'symIQR':
-        q1,q2 = np.percentile(vals,[25,50])
-        q3 = q2 + q2-q1
-        mu = q2
-        stdev = q3 - q2 + 1.5*(q3-q1)
-        assert nstds == 1
-
-    elif stdev_method == 'C2':
+    elif stdev_method == 'modC2':
+        #modified version of C2 method
         a = min(vals)
         q1,m,q3 = np.percentile(vals,[25,50,75])
-        #q3 = m + (m - q1) #symm q3
-        b = q3 + (q1 - a) #symm max val
+        b = q3 + (q1 - a) #use max val symmetric to a
 
         mu = 0.125*(a + 2*q1 + 2*m + 2*q3 + b)
         stdev = (b-a)/(4*gauss.ppf((n-.375)/(n+.25))) + \
@@ -341,17 +340,11 @@ def getMuStdev(vals,stdev_method):
         mu = 0.333*(q1 + m + q3)
         stdev = (q3-q1)/(2*gauss.ppf((.75*n-.125)/(n+.25)))
 
-    elif stdev_method == 'symmC3':
-        q1,m = np.percentile(vals,[25,50])
-        q3 = m + (m - q1) #symm q3
-        mu = 0.333*(q1 + m + q3)
-        stdev = (q3-q1)/(2*gauss.ppf((.75*n-.125)/(n+.25)))
-
     elif stdev_method in ['std','stdev']:
         mu,stdev =  np.mean(vals),np.std(vals)
 
     else:
-        raise ValueError('Method for stdev_method not recognized.')
+        raise ValueError('stdev_method not recognized.')
 
     return mu,stdev
 
@@ -385,7 +378,7 @@ def getSigmasFromConstraints(u,cinfo,objfoo,solver=None,verbose=False,
     if objfoo in ['wsum','non']:
         assert sum_weights is not None
         c = sum_weights
-    elif objfoo == 'sum':
+    elif objfoo == 'l1':
         c = np.ones(n)
     else:
         raise ValueError('objective function not recognized')
@@ -406,7 +399,7 @@ def getSigmasFromConstraints(u,cinfo,objfoo,solver=None,verbose=False,
         print('Solved sigmas. Obj =',result,f'({time.time()-start:.2f} s)')
     return x.value
 
-def computeThreshold(vals, nstds, maxthresh=np.inf, minval=0, plot=True, ax=None, c='b', label=None,
+def computeThreshold(vals, n_stds, maxthresh=np.inf, minval=0, plot=True, ax=None, c='b', label=None,
     stdev_method='std', plotQuartiles=False, title='Volume ratio distribution', showThresh=True):
 
     minthresh = 2.75 #prevents a pathological threshold for non-generic datasets with stdev ~= 0
@@ -422,7 +415,7 @@ def computeThreshold(vals, nstds, maxthresh=np.inf, minval=0, plot=True, ax=None
 
 
     mu,stdev = getMuStdev(vals,stdev_method)
-    thresh = max(minthresh, mu+nstds*stdev) #for non-generic datasets with stdev too close to 0
+    thresh = max(minthresh, mu+n_stds*stdev) #for non-generic datasets with stdev too close to 0
     if np.all(vals <= thresh) and maxthresh < thresh:
         thresh = maxthresh
 
@@ -469,85 +462,144 @@ def computeThreshold(vals, nstds, maxthresh=np.inf, minval=0, plot=True, ax=None
 #TODO: convert to class so we have an object that we can run each iteration separately on
 #then can easily revert to a previous state. i.e. save initial connectivity then
 #apply history of prunings
-def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
-       optC=None, obj='sum', stdev_method='C3', metric='euclidean',
-       maxPruneAtaTime=.1, nstds=4.5, maxIter=np.inf, mutual_method=None,
-       verbose=1, interactive=True,
-       pre_deleted_nodes=None, plot_final_stats=True, saveImgs={}, solver=None,
-       return_processed_inputs=False, tune_wG_method='median',
-       allowMSconvergence=False, plotQuartiles=True, return_stats=False):
-    """Compute IAN kernel from a data matrix or from pairwise distances.
+def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=None, 
+    Xplot=None, plot_interval=1, plot_final_stats=True, plotQuartiles=True, saveImgs={},
+    max_nbrhood_size=None, mutual_method=None, max_iters=np.inf, interactive=True, solver=None, 
+    tune_wG_method='median', allowMSconvergence=False, pre_deleted_nodes=None, fixedC=None, 
+    metric='euclidean', return_stats=False, return_processed_inputs=False, verbose=1):
+
+    """Compute Iterated Adaptive Neighborhoods (IAN kernel) from a data matrix or 
+    from pairwise distances, returning data graphs (unweighted and weighted), as well
+    as optimal individual kernel scales and a list of any disconnected points.
+
     Parameters
     ----------
-    method: str
+    method : str
         'exact': compute all pairwise distances from the data matrix X
         'exact-precomputed': assume X is a matrix of distances
         'exact-precomputed-sq': assume X is a matrix of squared distances
         'approximate': compute distances to a restricted number of neighbors (k-NN graph)
             set by `max_nbrhood_size`
         'approximate-precomputed': assume X is a tuple (kdists, knbr_indices) as retuned by KDTree
-    X : ndarray, shape (n_samples, n_attributes) or (n_samples, n_samples)
+
+    X : ndarray of shape (n_samples, n_features) or (n_samples, n_samples)
         X is a data matrix (with points as rows) or a pairwise distance matrix
-    max_nbrhood_size: int
-        sets the k-NN graph nbrhood size when using the 'approximate' method
-    Xplot: ndarray, shape (n_samples, 2)
-        Provides points positions in 2-D to be plotted for debugging
-    plot_interval: int
-        Show current data graph every `plot_interval` iterations.
-    optC: float
-        Set a fixed value for the hyperparameter C (not recommended, used only for debugging)
-        Leaving the default None will allow IAN to auto-tune it.
-    obj str
-        Objective function to use. 'sum' uses the convex linear program; 'greedy' uses a
-        faster algorithm, but produces suboptimal results.
-    stdev_method str
+
+    obj : str, default='l1'
+        Objective function: 'l1' uses the convex linear program with the L1-norm as
+        cost; 'greedy' uses a faster algorithm, but may produce suboptimal results.
+
+    stdev_method : str, default='C3'
         Method for computing a robust dispersion statistic of volume ratios. This is used
-        to automatically set the pruning threshold at every iteration.
-    metric str
-        Metric used for computing distances when method is not 'precomputed'
-    maxPruneAtaTime float or int
-        If int >= 1, sets the maximum number of edges that can be pruned per iteration.
-        If float < 1, sets the maximum percentage of nodes above threshold that can have one
-        of its edges pruned. For best results, use this value as low as possible. Larger values
-        make the algorithm converge fastar but also makes the results more imprecise.
-    nstds float
-        Number of standard deviations above the mean to set the pruning threshold.
-    maxIter int
-        Sets a maximum number of iterations, after which IAN should stop. If not yet converged 
-        abd `interactive` is True, user will be prompted before terminating.
-    mutual_method str or None
-        If using an 'approximate' method, whether to start with a mutual k-NN graph and 
-        add edges from its minimum spanning tree (see docs). Can be set to 'MST-min' or 'MST-all'.
-    verbose : int
-        Verbosity level.
-    interactive : bool
-        Whether to confirm with user if should really stop after reaching maxIters or continue.
-    pre_deleted_nodes list
-        List of points to be deleted from dataset.
-    plot_final_stats bool
+        to automatically set the pruning threshold at every iteration. The default is to use
+        a robust estimator of the mean and standard deviation based on quartiles, following:
+
+        Wan, X., Wang, W., Liu, J., and Tong, T. (2014). Estimating the sample mean and 
+        standard deviation from the sample size, median, range and/or interquartile range. 
+        BMC Medical Research Methodology, 14(1):1–13.
+
+    n_stds : float
+        Number of standard deviations above the mean to use when computing the adaptive
+        pruning threshold.
+
+    max_prune : {int, float}, default=0.1
+        If an int >= 1, sets the maximum number of edges that can be pruned per iteration.
+        If a float < 1, sets the maximum percentage of nodes above threshold that can have one
+        of its edges pruned. For best results, use this value as low as possible. For best
+        precision, set it to 1, but the algorithm is likely to take many iterations to converge. 
+        Larger values make the algorithm converge faster but also possibly makes the results less
+        precise. Setting it to 0.1 (i.e., prune at most 10% of the edges above threshold) seems to
+        yield a good compromise.
+
+    G0 : {ndarray, sparse matrix} of shape (n_samples, n_samples), default=None
+        A precomputed adjacency matrix for the initial Gabriel graph. By default it is 
+        automatically computed, but for very large examples it might be helpful to precompute it
+        and pass it as an argument.
+
+    Xplot : ndarray of shape (n_samples, 2), default=None
+        Provides points positions in 2-D in order to plot the current data graph
+        as the algorithm progresses (optional).
+
+    plot_interval : int, default=0
+        Plots current distribution of delta' (and the current data graph if `Xplot`
+        is provided) every `plot_interval` iterations. No plots by default.
+
+    plotQuartiles : bool, default=True
+        Whether to plot the volume ratio quartiles over the histogram (when plotting is enabled)
+
+    plot_final_stats : bool
         Whether to display the final volume ratios after convergence.
-    saveImgs dict
-        Optional arguments for saving the plots as figures.
-    solver str
-        Solver to use with cvxpy optimization package.
-    return_processed_inputs bool
+
+    saveImgs : dict
+        Optional arguments for saving the matplotlib plots as figures:
+        saveImgsto : path to where figures are saved, default=None (not saving)
+        img_format : figure format (str), default='pdf'
+        dpi : {float, int}, default=150
+
+        max_nbrhood_size=None, mutual_method=None, max_iters=np.inf, interactive=True, solver=None, 
+
+    max_nbrhood_size : int, default=None
+        Sets the k-NN graph neighborhood size when using the 'approximate' method.
+
+    mutual_method : str, optional
+        If using an 'approximate' method, whether to start with a mutual k-NN graph and 
+        add edges from its minimum spanning tree; can be set to 'MST-min' or 'MST-all'
+        (see docs for `computeMutualAdjacencyMatrix` for more information).
+
+    max_iters : int, optional
+        Sets a maximum number of iterations, after which IAN should stop. If not yet converged 
+        and `interactive` is True, user will be prompted before terminating.
+
+    interactive : bool, default=True
+        Whether to prompt user to confirm if should really stop upon reaching max_iters (if set).
+
+    solver : str, optional
+        Solver to use with cvxpy optimization package. Setting to None uses the default solver
+        provided by cvxpy. See here for a list of options:
+        https://www.cvxpy.org/tutorial/advanced/index.html#choosing-a-solver
+
+    tune_wG_method : str, default='median'
+        Method for tuning the weighted graph after convergence. Accepts 'median' or 'mean'; 
+        in most cases there is very little difference between the two.
+
+    allowMSconvergence : bool, default=False
+        Whether to check at every iteration if the current weighted (multiscale) graph 
+        has no outliers, in which case the algorithm may converge earlier (but unweighted 
+        graph may not be optimal). See IAN paper for more information.
+
+    pre_deleted_nodes : list, optional
+        List of points to be deleted from dataset.
+
+    fixedC : float, optional
+        Set a fixed value for the hyperparameter C (not recommended, used only for debugging).
+        The default (None) is to allow IAN to auto-tune it.
+
+    metric : str, default='euclidean'
+        Metric used for computing distances when `method` is not 'precomputed'. Can be chosen
+        from the list of metrics provided by scikit-learn.
+
+    return_stats : bool, default=False
+        If True, also return pruning_history, sigma_history, G_stats, wG_stats.
+
+    return_processed_inputs : bool, default=False
         Return initial adjacency matrix (Gabriel graph) and distance matrix, without computing IAN.
-    tune_wG_method str
-        Method for tuning the weighted graph after convergence. Can be 'median' or 'mean'.
-    allowMSconvergence bool
-        Whether to check at every iteration if the current weighted graph has no outliers, in which
-        case the algorithm can converge earlier (but unweighted graph may not be optimal).
-    plotQuartiles bool
-        Whether to plot the volume ratio quartiles over the histogram.
-    return_stats bool
-        If True, also return pruning_history, sigma_history, G_stats, wG_stats
+
+    verbose : int, default=0
+        Verbosity level; choose from range [0,3].
 
     Returns
     -------
-    G : Final unweighted graph
-    wG: Final weighted graph
-    optSigs: optimal individual scales used for weighted graph
-    disc_pts: list of points that may have been disconnected (along with their last nbr and scale)
+    G : csr sparse matrix of shape (n_samples, n_samples)
+        Final unweighted graph.
+
+    wG : csr sparse matrix of shape (n_samples, n_samples)
+        Final weighted graph.
+
+    optScales : ndarray of shape (n_samples,)
+        Optimal individual scales used for producing the weighted graph.
+
+    disc_pts : list
+        List of points (if any) that were disconnected (along with their last nbr and scale).
 
     """
 
@@ -595,9 +647,9 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
             return D1,D2,scl
         return D1,scl
 
-    def process_input(X,Adj,method,metric,obj,max_nbrhood_size):
+    def process_input(X, Adj, method, metric, obj, max_nbrhood_size):
 
-        assert obj in ['greedy','sum','wsum','non']
+        assert obj in ['greedy','l1']
 
         if method in ['exact', 'exact-precomputed', 'exact-precomputed-sq']:
             N = X.shape[0]
@@ -617,6 +669,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
             D1, D2, scl = check_precondition_distance_matrices(D1,D2)
 
             if Adj is None:
+                if extraVerbose: print('Computing initial graph: ', end='')
                 Adj = computeGabriel(D2.astype('float32'),verbose=max(500,N//10) if extraVerbose else 0)
                 Adj = Adj.maximum(Adj.transpose())
             else:
@@ -660,9 +713,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
 
             D2 = D1.copy()
             D2.data = D2.data**2  
-            if excessiveVerbose: print('done D1,D2')
-
-          
+            if excessiveVerbose: print('Done processing pairwise distances.')
 
             if Adj is None:
                 #compute Gabriel from sparse D2
@@ -677,7 +728,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
                 assert Adj.shape[0] == N
                 Adj = check_precomputed_Adj_format(Adj)
 
-            if excessiveVerbose: print('done Adj')
+            if excessiveVerbose: print('Done processing initial data graph.')
 
 
         else:
@@ -698,12 +749,12 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
             D1Adj.eliminate_zeros()            
         else:
             D1Adj = sp.sparse.csr_matrix(np.multiply(Adj, D1))
-        if excessiveVerbose: print('done D1Adj')
+        #if excessiveVerbose: print('done D1Adj')
 
         
         xis,xjs,d1s = sp.sparse.find(sp.sparse.triu(D1Adj,k=1))
         wA = {(xis[i],xjs[i]):d1s[i] for i in range(len(xis))}
-        if excessiveVerbose: print('done wA')
+        #if excessiveVerbose: print('done wA')
         
 
         sorted_nbrs = {}
@@ -742,7 +793,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
                 mid = min(deg-1,max(1,int(np.ceil(deg/2.))-1))
                 med_d = nbr_d1s[deg-mid-1]
                 med_nbr_ds[xi] = med_d
-        if excessiveVerbose: print('done computing degrees and FN_D1s', time.time()-start)
+        if excessiveVerbose: print('Done computing degrees and distances to FNs', time.time()-start)
 
 
         sum_weights = None
@@ -938,12 +989,12 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
             plt.savefig(f'{saveImgsto}/it{it+1}.{img_format}',dpi=dpi)
 
     
-    Adj, D1, D2, scl = process_input(X,Adj,method,metric,obj,max_nbrhood_size)
+    Adj, D1, D2, scl = process_input(X, G0, method, metric, obj, max_nbrhood_size)
     if extraVerbose: print('Done processing input.')
     if return_processed_inputs:
         return Adj, D1/scl
 
-    wA, sorted_nbrs, degrees, FN_D1s, sum_weights, non_nnd1s, med_nbr_ds = get_connectivity_data(Adj, D1, obj, optC is None)
+    wA, sorted_nbrs, degrees, FN_D1s, sum_weights, non_nnd1s, med_nbr_ds = get_connectivity_data(Adj, D1, obj, fixedC is None)
     if excessiveVerbose: print('Done get_connectivity_data')
 
     if pre_deleted_nodes is not None:
@@ -961,7 +1012,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
     total_pruned = 0
 
 
-    if optC is None:
+    if fixedC is None:
         optC = min( max( 0.55, np.median(med_nbr_ds/FN_D1s) ), .95)
         assert optC <= 1
         if extraVerbose:
@@ -969,10 +1020,11 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
         C_tuning = True
 
     else:
-        if optC > 1:
-            raise ValueError('C must be positive <= 1 or None (auto-tuning)')
+        if fixedC > 1:
+            raise ValueError('Provided fixed C must be positive <= 1 or None (auto-tuning)')
+        optC = fixedC
         if minimalVerbose:
-            print(f'C value provided by user = {optC} -- skipping tuning.')
+            print(f'Fixed C value provided by user = {optC} -- skipping tuning.')
         C_tuning = False
 
     #setting slack for how close to 1 the median of the delta_i' distribution should be
@@ -988,7 +1040,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
         n_subplots = 1 + int(allowMSconvergence) + int(Xplot is not None) #1 to 3 subplots, depending on arguments
 
 
-    while it < maxIter:
+    while it < max_iters:
 
 
         stats_args = dict(degrees=degrees, D2=D2, sig2scl=sig2scl, disc_pts=disc_pts, debugPts=debugStatsPts)
@@ -1022,7 +1074,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
 
 
         ### compute adaptive threshold for current distribution
-        mu_,stdev_,thresh,_ = computeThreshold(nonz_stats, nstds, 5 - diffmu, plot=thisPlot, ax=ax, stdev_method=stdev_method,
+        mu_,stdev_,thresh,_ = computeThreshold(nonz_stats, n_stds, 5 - diffmu, plot=thisPlot, ax=ax, stdev_method=stdev_method,
                                                 plotQuartiles=plotQuartiles, title='Discrete graph statistics')
 
         #TODO:? sort stats and indices to be pruned together: sorted_stats, to_be_pruned = zip(stats, np.arange(N))
@@ -1072,13 +1124,13 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
         if allowMSconvergence:
             # test for early convergence based on multi-scale weighted graph
 
-            wG = getSparseMultiScaleK(**stats_args, optSigs=sigmas, verbose=excessiveVerbose,
+            wG = getSparseMultiScaleK(**stats_args, optScales=sigmas, verbose=excessiveVerbose,
                                             returnSparse=False, symmetrize=False)
             ms_stats = getVolumeRatios(**stats_args, wG=wG, sigmas=sigmas)
 
             ax = None if not thisPlot else axes[1]
 
-            ms_mu,ms_stdev,ms_thresh,_ = computeThreshold(ms_stats[ms_stats > 0], nstds, 3 - diffmu, plot=thisPlot, ax=ax,
+            ms_mu,ms_stdev,ms_thresh,_ = computeThreshold(ms_stats[ms_stats > 0], n_stds, 3 - diffmu, plot=thisPlot, ax=ax,
                 stdev_method=stdev_method, plotQuartiles=plotQuartiles, title='Weighted graph statistics')
 
             ms_n_to_be_pruned = (ms_stats > ms_thresh).sum()
@@ -1100,13 +1152,13 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
         sorted_stats = sorted(stats[to_be_pruned],reverse=True)
         
 
-        if maxPruneAtaTime is not None:
+        if max_prune is not None:
             #check max # edges allowed to be pruned per iter
-            if type(maxPruneAtaTime) == int: #actual number (int)
-                maxNPruned = maxPruneAtaTime
+            if type(max_prune) == int: #actual number (int)
+                maxNPruned = max_prune
 
-            elif type(maxPruneAtaTime) == float: #percentage
-                maxNPruned = max(1,int(maxPruneAtaTime*len(to_be_pruned)))
+            elif type(max_prune) == float: #percentage
+                maxNPruned = max(1,int(max_prune*len(to_be_pruned)))
 
             to_be_pruned = to_be_pruned[:maxNPruned]
 
@@ -1147,13 +1199,13 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
         itstart = time.time()
         it += 1
         
-        if it == maxIter:
+        if it == max_iters:
             doBreak = True
             if interactive:
                 if input("Reached max # iterations. Continue? Y or N").lower() == 'y':
                     doBreak = False
-                    maxIter += 100
-                    print("Changing max # iters to", maxIter)
+                    max_iters += 100
+                    print("Changing max # iters to", max_iters)
             if doBreak:
                 if minimalVerbose: print('STOPPING - Reached max iters')
                 break
@@ -1161,7 +1213,7 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
     ### end while
 
     ### plotting the data graph, after convergence
-    if it < maxIter and thisPlot and Xplot is not None:
+    if it < max_iters and thisPlot and Xplot is not None:
         ax = axes[1 + int(allowMSconvergence)]
         plotGraphConnections(f, ax, Xplot, wA, 'Converged.', it, [], debugStatsPts, sigmas, scl, **saveImgs)
         plt.show()
@@ -1178,15 +1230,15 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
     if tune_wG_method is not None:
         if minimalVerbose:
             print('C-tuning weighted graph...')        
-        optC, optSigs, wstats, wmu, cinfo, wG = getSigmasTuneC(C_tuning, optC, cinfo, wA, FN_D1s, obj, sum_weights, stats_args, tune_wG_method, 
+        optC, optScales, wstats, wmu, cinfo, wG = getSigmasTuneC(C_tuning, optC, cinfo, wA, FN_D1s, obj, sum_weights, stats_args, tune_wG_method, 
             use_wG=True, median_tol=median_tol, solver=solver, verbose=excessiveVerbose, optverbose=optverbose)
 
     else:
         if minimalVerbose:
             print('Computing weighted graph...')   
-        optSigs = sigmas.copy()
-        wG = getSparseMultiScaleK(**stats_args, optSigs=optSigs, verbose=excessiveVerbose)
-        wstats = getVolumeRatios(**stats_args, wG=wG, sigmas=optSigs)
+        optScales = sigmas.copy()
+        wG = getSparseMultiScaleK(**stats_args, optScales=optScales, verbose=excessiveVerbose)
+        wstats = getVolumeRatios(**stats_args, wG=wG, sigmas=optScales)
         
     
     if minimalVerbose:
@@ -1196,10 +1248,10 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
 
     if plot_final_stats:
         f,axes = subps(1,2 + int(Xplot is not None),3.5,5)
-        mu,stdev,_,_ = computeThreshold(stats[stats > 0], nstds, plot=True, ax=axes[0],
+        mu,stdev,_,_ = computeThreshold(stats[stats > 0], n_stds, plot=True, ax=axes[0],
             plotQuartiles=plotQuartiles, showThresh=False, title='Final volume ratios for discrete graph')
 
-        mu,stdev,_,_ = computeThreshold(final_nonz_wstats, nstds, plot=True, ax=axes[1],
+        mu,stdev,_,_ = computeThreshold(final_nonz_wstats, n_stds, plot=True, ax=axes[1],
             plotQuartiles=plotQuartiles, showThresh=False, title='Final volume ratios for weighted graph')
 
         if Xplot is not None:
@@ -1212,13 +1264,13 @@ def IAN(method, X, Adj=None, max_nbrhood_size=None, Xplot=None, plot_interval=1,
     rows, cols = list(zip(*wA.keys()))
     G = sp.sparse.csr_matrix((np.ones(2*len(wA)),(rows+cols,cols+rows)),shape=D1.shape)
 
-    optSigs /= scl
+    optScales /= scl
     disc_pts = list(zip(disc_pts,disc_pt_info))
     
     if return_stats:
-        return G, wG, optSigs, disc_pts, pruning_history, sigma_history, stats, wstats
+        return G, wG, optScales, disc_pts, pruning_history, sigma_history, stats, wstats
     
-    return G, wG, optSigs, disc_pts
+    return G, wG, optScales, disc_pts
 
 
 
@@ -1236,7 +1288,7 @@ def getSigmasFixedC(curr_C, cinfo, weighted_edges, FN_D1s, obj, stats_args, mu_m
 
     curr_wG = None
     if use_wG:
-        curr_wG = getSparseMultiScaleK(**stats_args,optSigs=curr_sigmas,verbose=verbose)
+        curr_wG = getSparseMultiScaleK(**stats_args,optScales=curr_sigmas,verbose=verbose)
     curr_ratios = getVolumeRatios(**stats_args,wG=curr_wG,sigmas=curr_sigmas)
 
     #given the new volume ratios, update median of distribution
@@ -1303,7 +1355,7 @@ def getSigmasTuneC(C_tuning, curr_C, cinfo, weighted_edges, FN_D1s, obj, sum_wei
         assert curr_sigmas is not None
 
         if use_wG:
-            curr_wG = getSparseMultiScaleK(**stats_args,optSigs=curr_sigmas,verbose=verbose)
+            curr_wG = getSparseMultiScaleK(**stats_args,optScales=curr_sigmas,verbose=verbose)
 
         curr_ratios = getVolumeRatios(**stats_args,wG=curr_wG,sigmas=curr_sigmas)
 
@@ -1325,7 +1377,7 @@ def getSigmasTuneC(C_tuning, curr_C, cinfo, weighted_edges, FN_D1s, obj, sum_wei
         #bisect
         curr_C = minC + .5*(maxC - minC)
 
-    # 2) reach here if C needs to be (re)-computed
+    # 2) reach here if C needs to be (re)computed
 
     if obj != 'greedy':
         # define constaints using C as a variable parameter
@@ -1353,7 +1405,7 @@ def getSigmasTuneC(C_tuning, curr_C, cinfo, weighted_edges, FN_D1s, obj, sum_wei
         assert curr_sigmas is not None
 
         if use_wG:
-            curr_wG = getSparseMultiScaleK(**stats_args, optSigs=curr_sigmas, verbose=verbose)
+            curr_wG = getSparseMultiScaleK(**stats_args, optScales=curr_sigmas, verbose=verbose)
 
         curr_ratios = getVolumeRatios(**stats_args, wG=curr_wG, sigmas=curr_sigmas)
         mu = getMuStdev(curr_ratios[curr_ratios > 0],mu_method)
@@ -1495,7 +1547,7 @@ def getParamConstraintFixedC(weighted_edges,C,FN_D1s):
     return cinfo
 
 
-def buildOptimizationProblem(weighted_edges,D1_fn,objfoo='sum',sum_weights=None,verbose=False):
+def buildOptimizationProblem(weighted_edges,D1_fn,objfoo='l1',sum_weights=None,verbose=False):
 
     if verbose:
         print('Building constraints...',end=' ')
@@ -1531,7 +1583,7 @@ def buildOptimizationProblem(weighted_edges,D1_fn,objfoo='sum',sum_weights=None,
     if objfoo in ['wsum','non']:
         assert sum_weights is not None
         c = sum_weights
-    elif objfoo == 'sum':
+    elif objfoo == 'l1':
         c = np.ones(n)
     else:
         raise ValueError('objective function not recognized')
@@ -1545,11 +1597,9 @@ def buildOptimizationProblem(weighted_edges,D1_fn,objfoo='sum',sum_weights=None,
     return x,objective,constraints,C,C_tilde
 
 
+
+
 ############### NCD ##################
-
-
-
-
 
 
 def estimateLocalDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, useMedian=True, returnDegDims=True,
@@ -1560,24 +1610,33 @@ def estimateLocalDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, 
 
     Parameters
     ----------
-    A : ndarray or sparse matrix, shape: (n_samples, n_samples)
+    A : {ndarray, sparse matrix} of shape (n_samples, n_samples)
         A dense or sparse unweighted adjacency matrix (G, from the IAN algorith)
+    
     D2: ndarray, shape: (n_samples, n_samples)
         a square matrix of pairwise squared distances
-    nbrhoodOrder: int
+    
+    nbrhoodOrder : int
         sets the number of hops for neighbors-of-neighbors to include in the extended neighborhood
-    centralPtDim: bool
+    
+    centralPtDim : bool
         whether to compute dimension based on central nodes of the neighborhood, default: True
-    nbrsAvgDims: bool
+    
+    nbrsAvgDims : bool
         whether to smooth final dimension estimates by averaging among adjacent neighbors in A
-    useMedian: bool
+    
+    useMedian : bool
         whether to use median instead of mean when finding most central node in the neighborhood
         (when centralPtDim is True)
-    returnDegDims: whether to return the dimension values directly obtained from the degrees in A
-    debugPts: list of ints
+    
+    returnDegDims : whether to return the dimension values directly obtained from the degrees in A
+    
+    debugPts : list of ints
         prints out detailed information about a particular set of nodes of interest
+    
     X: ndarray, shape: (n_samples, p)
         data matrix with points as rows. Optional; used only when debugPts is not empty.
+    
     verbose: False
         whether to print out current progress (number of nodes processed so far);
         quite helpful for large datasets since this may take a few minutes to finish.
@@ -1966,8 +2025,8 @@ def computeHeatGeodesics(K, t, chosen_pts, verbose=False):
     Geodesics in heat: A new approach to computing distance based on heat flow. 
     ACM Transactions on Graphics. arXiv preprint arXiv:1204.6216
 
-    I also used the MATLAB implementation below (for triangular meshes) as reference:
-    http://www.numerical-tours.com/matlab/meshproc_7_geodesic_poisson/
+    I have also used the MATLAB implementation below (for use with triangular meshes) 
+    as reference: http://www.numerical-tours.com/matlab/meshproc_7_geodesic_poisson/
 
     Parameters
     ----------

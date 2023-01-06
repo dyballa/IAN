@@ -463,7 +463,7 @@ def computeThreshold(vals, n_stds, maxthresh=np.inf, minval=0, plot=True, ax=Non
 #then can easily revert to a previous state. i.e. save initial connectivity then
 #apply history of prunings
 def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=None, 
-    Xplot=None, plot_interval=1, plot_final_stats=True, plotQuartiles=True, saveImgs={},
+    Xplot=None, plot_interval=0, plot_final_stats=True, plotQuartiles=True, saveImgs={},
     max_nbrhood_size=None, mutual_method=None, max_iters=np.inf, interactive=True, solver=None, 
     tune_wG_method='median', allowMSconvergence=False, pre_deleted_nodes=None, fixedC=None, 
     metric='euclidean', return_stats=False, return_processed_inputs=False, verbose=1):

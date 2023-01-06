@@ -450,7 +450,6 @@ def my_tsne_fit(tsne, distances, precomputed_sigmas=None, skip_num_points=0, ver
     # Laurens van der Maaten, 2009.
     degrees_of_freedom = max(tsne.n_components - 1, 1)
 
-    testP = P.data.astype('float32')
     tsne.embedding_ = tsne._tsne(
         P,
         degrees_of_freedom,

@@ -467,6 +467,34 @@ def my_tsne_fit_transform(tsne, sqdistances, precomputed_sigmas=None, recompute=
         my_tsne_fit(tsne, sqdistances, precomputed_sigmas, skip_num_points, verbose)
     return tsne.embedding_
 
+def spectral_init_from_umap(graph, m, random_state=123456789):
+    
+    """ Computes a spectral embedding (akin to Laplacian eigenmaps) for initializing t-SNE 
+    (analogously to what is done in UMAP, for a fair comparison b/w the two).
+    The code below was adapted from the `spectral_layout` function in the umap-learn package. """
+
+    n_components, labels = sp.sparse.csgraph.connected_components(graph)
+
+    if n_components > 1:
+        print(f'Found more than 1 connected component ({n_components}).')
+        print('UMAP does additional pre-processing in this case.')
+        print("Please run UMAP's spectral_layout for a fair comparison.")
+        
+    diag_data = np.asarray(graph.sum(axis=0))
+
+    # Normalized Laplacian
+    I = sp.sparse.identity(graph.shape[0], dtype=np.float64)
+    D = sp.sparse.spdiags(
+        1.0 / np.sqrt(diag_data), 0, graph.shape[0], graph.shape[0]
+    )
+    L = I - D * graph * D
+
+    k = m + 1
+    eigenvectors, eigenvalues, _ = sp.sparse.linalg.svds(L, k=k, return_singular_vectors='u',
+                                                        random_state=random_state)
+    order = np.argsort(eigenvalues)[1:k]
+    return eigenvectors[:, order]
+
 def computeTSNEsigmas(sqdistances, desired_perplexity, verbose=False):
 
     # Compute conditional probabilities such that they approximately match

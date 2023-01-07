@@ -12,7 +12,7 @@ From the command line run:
 pip install git+https://github.com/dyballa/IAN
 ```
 
-You will need to have `git` installed for this command to work. I plan to create a pip-installable package available soon.
+You will need to have `git` installed for this command to work. I plan to create a pip-installable package soon.
 
 ## Documentation
 

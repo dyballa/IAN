@@ -2,9 +2,21 @@
 
 IAN is an algorithm for estimating a data graph from data points or pairwise distances. It can be used in manifold applications, such as dimensionality reduction, geodesic inference, and local dimensionality estimation. For more information, please refer to the paper:
 
-Dyballa, L., Zucker, S. W. (2022), "IAN: Iterative Adaptive Neighborhoods for manifold learning and dimensionality estimation", _Neural Computation_, 35 (in press). Preprint: https://arxiv.org/abs/2208.09123
+> Dyballa, L., Zucker, S. W. (2022), "IAN: Iterative Adaptive Neighborhoods for manifold learning and dimensionality estimation", _Neural Computation_, 35 (in press). Preprint: https://arxiv.org/abs/2208.09123
 
 ## Installation
+
+### Dependencies
+IAN requires:
+- Python 3
+- NumPy
+- SciPy
+- scikit-learn
+- CVXPY
+- Matplotlib
+
+### User installation
+
 
 From the command line run:
 
@@ -12,7 +24,7 @@ From the command line run:
 pip install git+https://github.com/dyballa/IAN
 ```
 
-You will need to have `git` installed for this command to work. I plan to create a pip-installable package soon.
+You will need to have `git` installed for this command to work. I strongly recommend creating a new environment for installing IAN.
 
 ## Documentation
 

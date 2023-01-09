@@ -1240,10 +1240,10 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
         wG = getSparseMultiScaleK(**stats_args, optScales=optScales, verbose=excessiveVerbose)
         wstats = getVolumeRatios(**stats_args, wG=wG, sigmas=optScales)
         
-    
+    final_nonz_wstats = wstats[wstats > 0]
+
     if minimalVerbose:
         print(f'Discrete graph stats: mean={np.mean(nonz_stats):.3f}, median={np.median(nonz_stats):.3f}')
-        final_nonz_wstats = wstats[wstats > 0]
         print(f'Weighted graph stats: mean={np.mean(final_nonz_wstats):.3f}, median={np.median(final_nonz_wstats):.3f}')
 
     if plot_final_stats:

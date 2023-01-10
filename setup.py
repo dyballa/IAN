@@ -13,7 +13,7 @@ ext_modules = [ Extension( "ian.cutils", ['ian/cutils.' + ext],
 				) ]
 setup(
     name='IAN',
-    version='1.0.0',
+    version='1.1.0',
     packages=['ian',],
     author="Luciano Dyballa",
     description="Iterated Adaptive Neighborhoods for manifold learning and dimensionality estimation.",

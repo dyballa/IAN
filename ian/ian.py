@@ -11,6 +11,7 @@ from collections import deque
 from ian.utils import subps, getTri, plotDataGraph
 from ian.cutils import computeGabriel, greedySplitting
 
+# setting solver options for use with cvxpy
 solver_opts = {'SCS':dict(use_indirect=True,eps=1e-5), 'ECOS':dict(abstol=1e-5,reltol=1e-5),
        'GUROBI':dict(FeasibilityTol=1e-5,OptimalityTol=1e-5)}
 
@@ -121,7 +122,7 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
 
     nCCs, CCis = sp.sparse.csgraph.connected_components(mutualAdj)
     print('nCCs',nCCs)
-    if nCCs > 1:#TODO: ignore CCs of very small size?
+    if nCCs > 1:
 
         mst = sp.sparse.csgraph.minimum_spanning_tree(D2)
         nCCs_mst = sp.sparse.csgraph.connected_components(mst)[0]
@@ -399,19 +400,20 @@ def getSigmasFromConstraints(u,cinfo,objfoo,solver=None,verbose=False,
         print('Solved sigmas. Obj =',result,f'({time.time()-start:.2f} s)')
     return x.value
 
-def computeThreshold(vals, n_stds, maxthresh=np.inf, minval=0, plot=True, ax=None, c='b', label=None,
+def computeThreshold(vals, n_stds, maxthresh=np.inf, plot=True, ax=None, color='b', label=None,
     stdev_method='std', plotQuartiles=False, title='Volume ratio distribution', showThresh=True):
 
     minthresh = 2.75 #prevents a pathological threshold for non-generic datasets with stdev ~= 0
     # and, furthermore, empirically prevents most 1-D datasets from being inadvertently disconnected.
     #  
-    # setting `maxthresh` prevents an artifically high threshold when distribution is very heavy-tailed
-    # (empirically, a value of ~5 is sufficient to guarantee connectedness even for 1-D datasets
+    # setting `maxthresh` prevents an artificially high threshold when distribution is very heavy-tailed
+    # (empirically, a value of ~5 is sufficient to guarantee connectedness even for most 1-D datasets
     # that are sampled uniformly/normally at random, provided median ~= 1. this value drops to ~3 
     # for multi-scale ratios.)
 
-    # 1-D datasets are used here due to the fact that they are the most extreme case in terms of
-    # the effect of non-uniformity of sampling on the distributino of distances to nearest neighbors.
+    # 1-D datasets are mentioned here because they are the most extreme case in terms of
+    # the effect of non-uniformity of sampling on the distribution of distances to the nearest neighbor
+    # (i.e., are more easily disconnected)
 
 
     mu,stdev = getMuStdev(vals,stdev_method)
@@ -433,7 +435,7 @@ def computeThreshold(vals, n_stds, maxthresh=np.inf, minval=0, plot=True, ax=Non
         if ax is None: 
             ax = plt.subplot(111)
             
-        counts,_,_ = ax.hist(vals,bin_edges,lw=1.,color=c,histtype='step',label=label) 
+        counts,_,_ = ax.hist(vals,bin_edges,lw=1.,color=color,histtype='step',label=label) 
         ax.set_xlabel(f"volume ratio, $\delta_i'$")
         ax.set_ylabel(f"counts")
 
@@ -459,11 +461,9 @@ def computeThreshold(vals, n_stds, maxthresh=np.inf, minval=0, plot=True, ax=Non
     
     return mu,stdev,thresh,counts
 
-#TODO: convert to class so we have an object that we can run each iteration separately on
-#then can easily revert to a previous state. i.e. save initial connectivity then
-#apply history of prunings
+
 def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=None, 
-    Xplot=None, plot_interval=0, plot_final_stats=True, plotQuartiles=True, saveImgs={},
+    Xplot=None, plot_interval=0, plot_final_stats=True, saveImgs={},
     max_nbrhood_size=None, mutual_method=None, max_iters=np.inf, interactive=True, solver=None, 
     tune_wG_method='median', allowMSconvergence=False, pre_deleted_nodes=None, fixedC=None, 
     metric='euclidean', return_stats=False, return_processed_inputs=False, verbose=1):
@@ -523,9 +523,6 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
     plot_interval : int, default=0
         Plots current distribution of delta' (and the current data graph if `Xplot`
         is provided) every `plot_interval` iterations. No plots by default.
-
-    plotQuartiles : bool, default=True
-        Whether to plot the volume ratio quartiles over the histogram (when plotting is enabled)
 
     plot_final_stats : bool
         Whether to display the final volume ratios after convergence.
@@ -610,6 +607,7 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
     sig2scl = 1
     optverbose = False
     debugStatsPts = []
+    plotQuartiles = True
     
     def check_precomputed_Adj_format(Adj):
         assert np.all(Adj.diagonal() == 0) #no loops
@@ -1077,8 +1075,6 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
         mu_,stdev_,thresh,_ = computeThreshold(nonz_stats, n_stds, 5 - diffmu, plot=thisPlot, ax=ax, stdev_method=stdev_method,
                                                 plotQuartiles=plotQuartiles, title='Discrete graph statistics')
 
-        #TODO:? sort stats and indices to be pruned together: sorted_stats, to_be_pruned = zip(stats, np.arange(N))
-        #sorted_stats, idxs = zip(*sorted(zip(stats, np.arange(N), reverse=True)))
 
 
         to_be_pruned = np.flatnonzero( stats > thresh )
@@ -1090,8 +1086,6 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
         if extraVerbose:
             print(len(to_be_pruned),'nodes above threshold.')
 
-        #TODO: check for not centered median regardless of len(to_be_pruned)
-        #because if not centered, this must give many more pts to prune
 
         #check that median delta'_i (from C-tuning) is not much greater than 1
         if diffmu > median_tol:
@@ -1303,22 +1297,6 @@ def getSigmasFixedC(curr_C, cinfo, weighted_edges, FN_D1s, obj, stats_args, mu_m
 
 def getSigmasTuneC(C_tuning, curr_C, cinfo, weighted_edges, FN_D1s, obj, sum_weights, stats_args, mu_method, use_wG=False, median_tol=.05,
                     solver=None, verbose=False, optverbose=False):
-
-
-    ###DEBUGGIN - CASES TO TEST
-    #a1 - first iteration, C_tuning
-    #a2 - first iteration, no C_tuning
-    #a3 - first iteration, greedy
-
-    #b1 - i-th iter, C not changing (C_tuning)
-    #b2 - i-th iter, C fixed
-    #b3 - i-th iter, C not changing (greedy)
-
-    #c1 - i-th iter, C changing (C_tuning)
-    #c2 - i-th iter, C changing (greedy)
-
-    #d1 - ms-tuning
-    #d2 - wG tuning
 
     if not C_tuning:
         return getSigmasFixedC(curr_C, cinfo, weighted_edges, FN_D1s, obj, stats_args, mu_method, use_wG, solver, verbose, optverbose)
@@ -1660,8 +1638,6 @@ def estimateLocalDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, 
             #use the first max of g2 as starting point to escape numerical errors at the start of the curves
             starti = findPeak(g2,startn)
 
-            #TODO: try to find closed forms for the zeros g2, g3
-
             #g2 0-x
             zero_cross = np.flatnonzero( (g2[starti:-1] > 0) & (g2[starti+1:] < 0) )
             assert len(zero_cross) >= 1
@@ -1676,7 +1652,6 @@ def estimateLocalDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, 
         #     g1max = maxs[0] + starti
         #     assert g1max - g2x0 <= 1
 
-            #TODO: use 0x of G2 with a scipy root-finding algorithm in the interval [g2x0,g2x0+1]
 
 
             #g3 0-x
@@ -1696,9 +1671,9 @@ def estimateLocalDims(A, D2, nbrhoodOrder, centralPtDim=True, nbrsAvgDims=True, 
                 else: g2min = mins[0] + starti
         #     assert g2min - g3x0 <= 1
 
-            #TODO: use 0x of G3 with a scipy root-finding algorithm in the interval [g2min-1,g2min+1]
 
             return g2x0,g2min
+
         def computeCellBounds(ds,boundtol = 1e-4):
 
             #compute left lim using closest nbr

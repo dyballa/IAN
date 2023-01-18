@@ -403,6 +403,9 @@ def getSigmasFromConstraints(u,cinfo,objfoo,solver=None,verbose=False,
 def computeThreshold(vals, n_stds, maxthresh=np.inf, plot=True, ax=None, color='b', label=None,
     stdev_method='std', plotQuartiles=False, title='Volume ratio distribution', showThresh=True):
 
+    """Computes adaptive threshold for the volume ratios and, optionally, 
+        plot a histogram of their distribution."""
+
     minthresh = 2.75 #prevents a pathological threshold for non-generic datasets with stdev ~= 0
     # and, furthermore, empirically prevents most 1-D datasets from being inadvertently disconnected.
     #  

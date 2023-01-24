@@ -1076,7 +1076,7 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
 
         ### compute adaptive threshold for current distribution
         mu_,stdev_,thresh,_ = computeThreshold(nonz_stats, n_stds, 5 - diffmu, plot=thisPlot, ax=ax, stdev_method=stdev_method,
-                                                plotQuartiles=plotQuartiles, title='Discrete graph statistics')
+                                                plotQuartiles=plotQuartiles, title='Unweighted graph statistics')
 
 
 
@@ -1103,7 +1103,7 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
         if len(to_be_pruned) == 0:
 
                 if minimalVerbose:
-                    print('CONVERGED: no change in discrete graph.')
+                    print('CONVERGED: no change in unweighted graph.')
                     print('Total # edges pruned:',sum(map(len,pruning_history)), end=', ')
                     print(f'({len(disc_pts)} disconnected points)')
 
@@ -1240,7 +1240,7 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
     final_nonz_wstats = wstats[wstats > 0]
 
     if minimalVerbose:
-        print(f'Discrete graph stats: mean={np.mean(nonz_stats):.3f}, median={np.median(nonz_stats):.3f}')
+        print(f'Unweighted graph stats: mean={np.mean(nonz_stats):.3f}, median={np.median(nonz_stats):.3f}')
         print(f'Weighted graph stats: mean={np.mean(final_nonz_wstats):.3f}, median={np.median(final_nonz_wstats):.3f}')
 
     if plot_final_stats:

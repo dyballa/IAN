@@ -13,22 +13,29 @@ import sys
 ################## UTILS ##################
 
 
-def subps(nrows,ncols,rowsz=3,colsz=4,d3=False,axlist=False):
+def subps(nrows, ncols, rowsz=3, colsz=4, d3=False, axlist=False):
+    """ Create figure and axes objects for an nrows-by-ncols grid of subplots.
+    Setting `d3` to True enables 3d projection.
+    Set `axlist` to True  if you want a list of axes returned even for a single subplot. """
     if d3:
         f = plt.figure(figsize=(ncols*colsz,nrows*rowsz))
         axes = [[f.add_subplot(nrows,ncols,ri*ncols+ci+1, projection='3d') for ci in range(ncols)] \
                 for ri in range(nrows)]
+        #make one-dimensional if there is a single row
         if nrows == 1:
             axes = axes[0]
             if ncols == 1:
                 axes = axes[0]
     else:
         f,axes = plt.subplots(nrows,ncols,figsize=(ncols*colsz,nrows*rowsz))
+
     if axlist and ncols*nrows == 1:
         axes = [axes]
     return f,axes
 
 def getTri(Adj):
+    """ Returns a copy of a 2-d array with its lower triangular entries zeroed out.
+    Useful for removing redudant entries in an undirected graph's adjacency matrix. """
     Adjtri = Adj.copy()
     Adjtri[np.tril_indices(Adj.shape[0])] = 0
     return Adjtri
@@ -53,9 +60,13 @@ def my_kendalltau(y):
     tau = 1 - (4.*s/(n*(n-1.)))
     return tau
 
-def plotDataGraph(X,edges,c=None,nodecmap=None,s=5,plot3d=False,edge_color=[.753,.753,.753,.8],
-    f_ax=None,colorbar=False,nodeis=False,subset=[],label=None,noTicks=True,axisEqual=True,
-    highlight_edges=[],hl_color=[1,0,0,1],hl_style='-.',hl_width=1,edge_style='-',edge_width=1,**kwargs):
+def plotDataGraph(X, edges, c=None, nodecmap=None, s=5, plot3d=False, edge_color=[.753,.753,.753,.8],
+    f_ax=None, colorbar=False, nodeis=False, subset=[], label=None, noTicks=True, axisEqual=True,
+    highlight_edges=[], hl_color=[1,0,0,1], hl_style='-.', hl_width=1, edge_style='-', edge_width=1, **kwargs):
+    
+    """ Plots an unweighted graph with node positions given by `X`. 
+    `edges` can be a list of edges or an adjacency matrix. """
+
     if type(edges) == np.ndarray and edges.ndim == 2:
         assert edges.shape[0] == edges.shape[1]
         edges = list(zip(*np.nonzero(getTri(edges))))
@@ -254,6 +265,7 @@ def knndists(D1, k, skip_self=False, sqdists=False):
 
 def plotScales(X,A,optsigs,circleColor='g',node_is=None,cmap=None,sigcolors=None,nLvls=1,scalesScl=1,
                 f_axes=None,showGraph=True,nodeLabels=False,subset=[],stats_minmax=None,sigstyle=None,circleLabel=None):
+    
     lvl_styles = [('-',1.),(':',1),('--',.75)]
     assert nLvls <= len(lvl_styles)
     if f_axes is None:
@@ -331,271 +343,12 @@ def plotScales(X,A,optsigs,circleColor='g',node_is=None,cmap=None,sigcolors=None
         plt.show()
 
 
-##### EMBEDDING UTILS
+def getMultiScaleK(D2, optSigs, sig2scl=1., disc_pts=[], tol=1e-8):
 
-def getGreedyPerm(D,N):
-    """
-    A Naive O(N^2) algorithm to do furthest points sampling
-    
-    Parameters
-    ----------
-    D : ndarray (N, N) 
-        An NxN distance matrix for points
-    Return
-    ------
-    tuple (list, list) 
-        (permutation (N-length array of indices), 
-        lambdas (N-length array of insertion radii))
-    """
-
-    #By default, takes the first point in the list to be the
-    #first point in the permutation, but could be random
-    perm = np.zeros(N, dtype=np.int64)
-    lambdas = np.zeros(N)
-    ds = D[0, :]
-    for i in range(1, N):
-        idx = np.argmax(ds)
-        perm[i] = idx
-        lambdas[i] = ds[idx]
-        ds = np.minimum(ds, D[idx, :])
-    return (perm, lambdas)
-
-
-def diffusionMapFromK(K, n_components, alpha=0, t=1, tol=1e-8, lambdaScale=True,
-    returnPhi=False, returnOrtho=False, unitNorm=False, sparse_eigendecomp=True, use_svd=True):
-    """Computes a diffusion map embedding from a kernel matrix"""
-
-    if sp.sparse.issparse(K):
-        return diffusionMapSparseK(K, n_components, alpha, t, lambdaScale,
-                    returnPhi, returnOrtho, unitNorm, use_svd)
-    else:
-        return diffusionMapK(K, n_components, alpha, t, tol, lambdaScale,
-                    returnPhi, returnOrtho, unitNorm, sparse_eigendecomp, use_svd)
-
-
-def diffusionMapSparseK(K, n_components, alpha=0, t=1, lambdaScale=True, 
-    returnPhi=False, returnOrtho=False, unitNorm=False, use_svd=True):
-    """ alpha: 0 (markov), 1 (laplace-beltrami), 0.5 (fokker-plank) """
-    assert alpha >= 0
-    assert sp.sparse.issparse(K)
-        
-    N = K.shape[0]
-
-    eps = np.finfo(K.dtype).eps
-
-    #normalize (kernel)-adjacency matrix by each node's degree
-    if alpha > 0:
-        D = np.array(K.sum(axis=1)).ravel()
-        Dalpha = np.power(D, -alpha)
-        #right-normalize
-        Dalpha = sp.sparse.spdiags(Dalpha, 0, N, N)
-        K = Dalpha * K * Dalpha
-
-
-    sqrtD = np.sqrt(np.array(K.sum(axis=1)).ravel()) + eps
-
-    #symmetrizing Markov matrix by scaling rows and cols by 1/sqrt(D)
-    sqrtDs = sp.sparse.spdiags(1/sqrtD, 0, N, N)
-
-
-    Ms = sqrtDs * K * sqrtDs
-
-    #ensure symmetric numerically
-    Ms = Ms.maximum(Ms.transpose()).tocsr()
-
-    SPARSETOL = 2*eps
-    #Ms[Ms < SPARSETOL] = 0 #bring out the zeros before eigendecomp
-    for i in range(N):
-        idxs,vals = Ms[i].indices, Ms[i].data
-        Ms[i].data[idxs[vals < SPARSETOL]] = 0
-    Ms.eliminate_zeros()
-
-    k = n_components + 1
-
-    assert k <= N, "sparse routines require n_components + 1 < N"
-
-    if use_svd:
-        U, lambdas, _ = sp.sparse.linalg.svds(Ms, k=k, return_singular_vectors='u')
-    else:
-        lambdas, U = sp.sparse.linalg.eigsh(Ms,k)#,overwrite_a=True,check_finite=False)
-
-
-    #sort in decreasing order of evals
-    idxs = lambdas.argsort()[::-1]
-    lambdas = lambdas[idxs]
-    U = U[:,idxs] #Phi
-
-    if returnOrtho:
-        Psi = U / U[:,0:1]
-    elif returnPhi:
-        assert sqrtD.ndim == 1 #assert col vector
-        Psi = U * sqrtD[:,None]
-    else:
-        assert sqrtD.ndim == 1 #assert col vector
-        Psi = U / sqrtD[:,None]
-        #Phi = U * sqrtD
-        #assert np.all(np.isclose((Phi.T @ Psi),np.eye(Psi.shape[1])))
-
-    #make Psi vectors have unit norm
-    if unitNorm:
-        Psi = Psi / np.linalg.norm(Psi,axis=0,keepdims=1)
-
-    if lambdaScale:
-        assert (lambdas.ndim == 1 and lambdas.shape[0] == Psi.shape[1])
-        if t == 0:
-            diffmap = Psi * np.power(-1/(lambdas-1),.5)
-        else:
-            diffmap = Psi * np.power(lambdas,t)
-
-    else: diffmap = Psi
-
-    return diffmap[:,1:],lambdas[1:]
-
-def diffusionMapK(K, n_components, alpha=0, t=1, tol=1e-8, lambdaScale=True,
-    returnPhi=False, returnOrtho=False, unitNorm=False, sparse_eigendecomp=True, use_svd=True):
-    """ alpha: 0 (markov), 1 (laplace-beltrami), 0.5 (fokker-plank) """
-
-    assert alpha >= 0
-    if sp.sparse.issparse(K):
-        K = K.toarray()
-
-    #assert symmetry
-    assert np.all(np.isclose(K - K.T,0))
-
-    N = K.shape[0]
-
-    eps = np.finfo(K.dtype).eps
-
-    #normalize (kernel) adjacency matrix by each node's degree
-    if alpha > 0:
-        #find degree q for each row
-        D = K.sum(axis=1,keepdims=1) #always >= 1
-        K = K / np.power(D @ D.T,alpha)
-
-        
-    #ignore kernel vals that are too small
-    K[K < tol] = 0
-
-    #symmetrizing Markov matrix by scaling rows and cols by 1/sqrt(D)
-    sqrtD = np.sqrt(K.sum(axis=1,keepdims=1)) + eps #could be zero!
-    Ms = K / (sqrtD @ sqrtD.T)
-
-    #ensure symmetric numerically
-    Ms = 0.5*(Ms + Ms.T)
-
-    SPARSETOL = 2*eps
-    Ms[Ms < SPARSETOL] = 0 #bring out the zeros before converting to sparse
-
-    k = n_components + 1
-
-    assert k <= N
-    if k == N:
-        sparse_eigendecomp = False #cannot compute all evals/evecs when sparse!
-
-    if sparse_eigendecomp:
-        sMs = sp.sparse.csc_matrix(Ms)
-        if use_svd: #sparse svd
-            U, lambdas, _ = sp.sparse.linalg.svds(sMs, k=k, return_singular_vectors='u')
-        else:
-            lambdas, U = sp.sparse.linalg.eigsh(sMs,k)#,overwrite_a=True,check_finite=False)
-    else:
-        if use_svd:
-            U, lambdas, _ = np.linalg.svd(Ms, full_matrices=False)
-        else:
-            lambdas, U = np.linalg.eigh(Ms)
-
-
-    #sort in decreasing order of eigenvalues
-    idxs = lambdas.argsort()[::-1]
-    lambdas = lambdas[idxs]
-    U = U[:,idxs] #Phi
-    
-    if not sparse_eigendecomp:
-        lambdas = lambdas[:k+1]
-        U = U[:,:k+1]
-
-    if returnOrtho:
-        Psi = U / U[:,0:1]
-    elif returnPhi:
-        assert sqrtD.shape[1] == 1 #assert col vector
-        Psi = U * sqrtD
-    else:
-        assert sqrtD.shape[1] == 1 #assert col vector
-        Psi = U / sqrtD
-        #Phi = U * sqrtD
-        #assert np.all(np.isclose((Phi.T @ Psi),np.eye(Psi.shape[1])))
-
-    #make Psi vectors have unit norm before scaling by eigenvalues
-    if unitNorm:
-        Psi = Psi / np.linalg.norm(Psi,axis=0,keepdims=1)
-
-    if lambdaScale:
-        assert (lambdas.ndim == 1 and lambdas.shape[0] == Psi.shape[1])
-        diffmap = Psi * np.power(lambdas,t)
-    else: diffmap = Psi
-
-    return diffmap[:,1:],lambdas[1:]
-
-from scipy.sparse.csgraph import connected_components, shortest_path
-from sklearn.neighbors import NearestNeighbors, kneighbors_graph
-from sklearn.utils.graph import _fix_connected_components
-from sklearn.manifold import smacof
-from sklearn.decomposition import KernelPCA
-def computeIsomap(X, knn,n_components, knbrs_graph=None, use_smacof=False, rs=0):
-    """ Computes isomap from data points and a number of nearest neighbors, k, 
-          or from a pre-specified unweighted graph """
-    neigh = None
-    if knbrs_graph is None:
-        neigh = NearestNeighbors(algorithm='kd_tree').fit(X)
-        knbrs_graph = kneighbors_graph(neigh, knn, mode='distance')
-    n_connected_components, labels = connected_components(knbrs_graph)
-    if n_connected_components > 1:
-
-        # use array pre-validated by NearestNeighbors
-        if neigh is None:
-            neigh = NearestNeighbors(algorithm='kd_tree').fit(X)
-            
-        knbrs_graph = _fix_connected_components(
-            neigh._fit_X,knbrs_graph.tolil(),n_connected_components,labels,mode="distance",
-        )
-
-    dist_matrix_ = shortest_path(knbrs_graph, directed=False)
-    
-    if use_smacof:
-        embedding,*_ = smacof(dist_matrix_,random_state=rs)
-    else:
-        G = -.5 * np.square(dist_matrix_)
-
-        kernel_pca_ = KernelPCA(
-            n_components=n_components,
-            kernel="precomputed",
-        )
-        embedding = kernel_pca_.fit_transform(G)#includes centering G
-    
-    return knbrs_graph, embedding
-
-def getTSNEPfromK(optSigs,D2,sig2scl=2.,kernel_method='multiscale'):
-    
-    N = optSigs.size
-    assert D2.shape[0] == D2.shape[1] == N
-    #setting up P matrix from kernel
-    if kernel_method == 'single':
-        #1- using their symmetrization (individual scales)
-        K = np.array([np.exp(-D2/(2*optSigs[i]**2)) for i in range(N)])
-    elif kernel_method == 'multiscale':
-        #2- using multi-scale kernel
-        K = getMultiScaleK(D2,optSigs,sig2scl=sig2scl)
-    else:
-        raise ValueError("kernel_method must be either 'single' or 'multiscale'.")
-    DBL_MIN = sys.float_info.min
-    np.fill_diagonal(K,DBL_MIN)
-    myP = K / K.sum(1,keepdims=1)
-    myP = myP + myP.T
-    myP /= myP.sum()
-    
-    return myP
-
-def getMultiScaleK(D2,optSigs,sig2scl=2.,disc_pts=[],tol=1e-8):
+    """ Produces a similarity matrix using a multi-scale Gaussian kernel.
+    D2 is a square matrix of squared pairwise distances, and optSigs is a list
+    of individual scales. sig2scl is the scalar multiple in the denominator of the
+    Gaussian exponential. """
 
     assert D2.ndim == 2 and D2.shape[0] == D2.shape[1]
     N = D2.shape[0]
@@ -642,11 +395,8 @@ def getMultiScaleK(D2,optSigs,sig2scl=2.,disc_pts=[],tol=1e-8):
 
 
         K[i,i+1:] = res #upper triang
-
-
         K[i+1:,i] = K[i,i+1:]#symmetrize
-    # #handle zero sigmas
-    # K[optSigs == 0] = 0
-    # K[:,optSigs == 0] = 0
+
 
     return K
+

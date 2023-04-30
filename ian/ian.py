@@ -8,7 +8,7 @@ from scipy.spatial.distance import squareform, pdist
 from scipy.stats import norm as gauss
 from scipy.stats import median_abs_deviation
 from collections import deque
-from ian.utils import subps, getTri, plotDataGraph
+from ian.utils import subps, getTri, plotDataGraph, knndists
 from ian.cutils import computeGabriel, greedySplitting
 
 # setting solver options for use with cvxpy
@@ -687,7 +687,7 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
                     'max_nbrhood_size chosen includes all points. Please switch to exact method.'
                     )
 
-                D1k,nbr_indices = knndists(X, max_nbrhood_size, 1)
+                D1k,nbr_indices = knndists(X, max_nbrhood_size, True)
 
 
             elif method == 'approximate-precomputed':
@@ -1217,7 +1217,7 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
 
                     
     if 'approximate' in method:
-        assert sp.issparse(D2)
+        assert sp.sparse.issparse(D2)
     #     #convert D2 into N-by-N sparse matrix
     #     rows,cols,d1s = sp.sparse.find(D1)
     #     D2 = sp.sparse.csr_matrix((d1s**2,(rows,cols)))

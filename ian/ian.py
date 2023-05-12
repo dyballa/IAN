@@ -2022,7 +2022,7 @@ def computeHeatGeodesics(K, t, chosen_pts, verbose=False):
 
     #https://en.wikipedia.org/wiki/Calculus_on_finite_weighted_graphs
     grad = lambda u,W: np.sqrt(W) * (np.diag(u) @ np.ones((N,N)) - np.ones((N,N)) @ np.diag(u))
-    div = lambda X_,W: np.sum(np.sqrt(W)*(X_.T - X_),1)[None,:]
+    div = lambda X_,W: .5 * np.sum(np.sqrt(W)*(X_.T - X_),1)[None,:]
 
     K_ = K.copy()
     np.fill_diagonal(K_,0)

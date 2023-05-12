@@ -89,8 +89,7 @@ def diffusionMapSparseK(K, n_components, alpha=0, t=1, lambdaScale=True,
     SPARSETOL = 2*eps
     #bring out the zeros before eigendecomp (equiv. to: Ms[Ms < SPARSETOL] = 0)
     for i in range(N):
-        idxs,vals = Ms[i].indices, Ms[i].data
-        Ms[i].data[idxs[vals < SPARSETOL]] = 0
+        Ms[i].data[Ms[i].data < SPARSETOL] = 0
     Ms.eliminate_zeros()
 
     k = n_components + 1

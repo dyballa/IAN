@@ -501,18 +501,46 @@ def computeTSNEsigmas(sqdistances, desired_perplexity, verbose=False):
     sqdistances = sqdistances.astype(np.float32, copy=False)
     return get_tsne_sigmas(sqdistances, desired_perplexity, verbose)
 
-def computeTSNEkernel(D2, sigmas,  normalize=True, symmetrize=True, return_sparse=True):
+def computeTSNEkernel(D2, sigmas, normalize=True, symmetrize=True, return_sparse=True):
     
-    conditional_P = np.zeros_like(D2)
+    """ Computes the t-SNE kernel from a dense square matrix of squared distances and 
+    precomputed sigmas """
+
+    n_samples = D2.shape[0]
+
+    if sp.sparse.issparse(D2):
+        D2.sort_indices()
+        n_samples = D2.shape[0]
+        distances_data = D2.data.reshape(n_samples, -1)
+        distances_data = distances_data
+    else:
+        distances_data = D2
+
+    conditional_P = np.zeros_like(distances_data)
     for i in range(conditional_P.shape[0]):
-        conditional_P[i] = np.exp(-D2[i]/(2*sigmas[i]**2))
+        conditional_P[i] = np.exp(-distances_data[i]/(2*sigmas[i]**2))
         conditional_P[i,i] = 0
         if normalize:
             sum_Pi = max(conditional_P[i].sum(),1e-8)
             conditional_P[i] /= sum_Pi
+
+    if sp.sparse.issparse(D2):
+        conditional_P = csr_matrix( (conditional_P.ravel(), distances.indices, distances.indptr),
+                        shape=(n_samples, n_samples))
     if symmetrize:
-        conditional_P = .5*(conditional_P + conditional_P.T)
+        conditional_P = (conditional_P + conditional_P.T)
+        if not normalize:
+            conditional_P *= .5
+
+    if normalize:
+
+        # Normalize the joint probability distribution
+        sum_P = np.maximum(conditional_P.sum(), np.finfo(D2.dtype).eps)
+        conditional_P /= sum_P
+        assert np.all(np.abs(P.data) <= 1)
+
     if return_sparse:
         conditional_P = sp.sparse.csr_matrix(conditional_P)
-    return conditional_P
 
+    return conditional_P
+    

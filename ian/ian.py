@@ -66,7 +66,7 @@ def getSparseMultiScaleK(D2, optScales, sig2scl=1., disc_pts=[], tol=1e-8, degre
             K[K < tol] = 0
             if returnSparse:
                 K = sp.sparse.csr_matrix(K)
-
+    K.eliminate_zeros()
     if symmetrize:
         if returnSparse:
             K = K.maximum(K.transpose())
@@ -110,15 +110,20 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
     N, max_nbrhood_size = nbr_indices.shape
     asymkNN = sp.sparse.csr_matrix( (np.ones(N * max_nbrhood_size, dtype='uint8'), (np.repeat(np.arange(N),max_nbrhood_size),nbr_indices.ravel()) ), shape=(N,N))
     #remove from Adj any asymmetric connections 
-    mutualAdj = Adj.multiply(asymkNN.minimum(asymkNN.transpose())).tolil()
+    mutualAdj = Adj.multiply(asymkNN.minimum(asymkNN.T)).tolil()
 
     #ensure symmetry
-    assert mutualAdj.maximum(mutualAdj.transpose()).nnz == mutualAdj.nnz
+    assert mutualAdj.maximum(mutualAdj.T).nnz == mutualAdj.nnz
 
-    #connect NNs
-    for xi,nni in enumerate(nbr_indices[:,0]):
-        mutualAdj[xi,nni] = 1
-        mutualAdj[nni,xi] = 1
+    mutualD2 = D2.minimum(D2.T).tolil()
+
+    #connect disconnected pts to their NNs
+    # for xi in np.flatnonzero(mutualAdj.sum(1).A1 == 0):
+    #     nni = nbr_indices[xi,0]
+    #     mutualAdj[xi,nni] = 1
+    #     mutualAdj[nni,xi] = 1
+    #     mutualD2[xi,nni] = D2[xi,nni]
+    #     mutualD2[nni,xi] = D2[nni,xi]
 
     nCCs, CCis = sp.sparse.csgraph.connected_components(mutualAdj)
     print('nCCs',nCCs)
@@ -138,10 +143,11 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
             # compute symmetrized MST
             rows,cols = mst.nonzero()
             mst1s = sp.sparse.csc_matrix((np.ones(len(rows),dtype='uint8'),(rows,cols)),shape=mst.shape)
-            mst1s = mst1s.maximum(mst1s.transpose())
+            mst1s = mst1s.maximum(mst1s.T)
 
             # add all edges from sym MST to mutualAdj
             mutualAdj_ = mutualAdj.maximum(mst1s)
+            mutualD2 = mutualD2.maximum(mst.maximum(mst.T))
 
             # ensure that new edges are Gabriel-neighbors
             new_edges = mutualAdj_ - mutualAdj
@@ -149,8 +155,13 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
             for xi,xj in zip(rows,cols):
                 if not connectGabriel(xi,xj):
                     mutualAdj_[xi,xj] = 0
+                    mutualAdj_[xj,xi] = 0
+                    mutualD2[xi,xj] = 0
+                    mutualD2[xj,xi] = 0
             mutualAdj_.eliminate_zeros()
             mutualAdj = mutualAdj_
+
+            mutualD2.eliminate_zeros()
 
 
         elif mutual_method == 'MST-min':
@@ -164,7 +175,7 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
             
             connectedCCs = set()
             # traverse each edge in the MST in order of increasing length
-            for xi,xj in zip(rows,cols):
+            for xi,xj,w in zip(rows,cols,ws):
                 #if xi and xj are in separate CCs ...
                 if CCis[xi] != CCis[xj]:
                     cci, ccj = CCis[[xi,xj]]
@@ -177,6 +188,8 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
                         connectedCCs.union([cci,ccj])
                         mutualAdj[xi,xj] = 1
                         mutualAdj[xj,xi] = 1
+                        mutualD2[xi,xj] = w
+                        mutualD2[xj,xi] = w
                         print('connected',cci,ccj,'nCCs:',sp.sparse.csgraph.connected_components(mutualAdj)[0])
 
                         if len(connectedCCs) == nCCs-1:
@@ -189,7 +202,7 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
     #ensure symmetry
     assert mutualAdj.maximum(mutualAdj.transpose()).nnz == mutualAdj.nnz
 
-    return mutualAdj
+    return mutualAdj, mutualD2
 
 def computeSparseGabriel(sparseD2, verbose=0):
     """Compute approximate Gabriel graph from a sparse (incomplete) square matrix of squared distances.
@@ -226,7 +239,7 @@ def computeSparseGabriel(sparseD2, verbose=0):
                 
             #check if any point is closer to both xi and xj than D2[xi,xj]
             connect = 1
-            for xk in set(xjs).intersection(sparseD2[xj].indices):
+            for xk in set(xjs).intersection(sparseD2[xj].indices):#can only check common nbrs
                 assert xk != xi and xk != xj
                 m2 = sparseD2[xi,xk] + sparseD2[xj,xk]
                 if m2 <= dij + eps:
@@ -536,8 +549,6 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
         img_format : figure format (str), default='pdf'
         dpi : {float, int}, default=150
 
-        max_nbrhood_size=None, mutual_method=None, max_iters=np.inf, interactive=True, solver=None, 
-
     max_nbrhood_size : int, default=None
         Sets the k-NN graph neighborhood size when using the 'approximate' method.
 
@@ -724,7 +735,10 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
                 Adj = sp.sparse.csc_matrix((np.ones(len(rows),dtype='uint8'),(rows,cols)),shape=(N,N))
 
                 if mutual_method is not None:
-                    Adj = computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method)                
+                    Adj, D2 = computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method)
+                    D1 = D2.copy()
+                    D1.data = np.sqrt(D1.data)
+
             else:
                 assert Adj.shape[0] == N
                 Adj = check_precomputed_Adj_format(Adj)
@@ -750,13 +764,11 @@ def IAN(method, X, obj='l1', stdev_method='C3', n_stds=4.5, max_prune=.1, G0=Non
             D1Adj.eliminate_zeros()            
         else:
             D1Adj = sp.sparse.csr_matrix(np.multiply(Adj, D1))
-        #if excessiveVerbose: print('done D1Adj')
 
         
         xis,xjs,d1s = sp.sparse.find(sp.sparse.triu(D1Adj,k=1))
         wA = {(xis[i],xjs[i]):d1s[i] for i in range(len(xis))}
-        #if excessiveVerbose: print('done wA')
-        
+
 
         sorted_nbrs = {}
         degrees = np.empty(N,dtype=int)

@@ -498,8 +498,18 @@ def computeTSNEsigmas(sqdistances, desired_perplexity, verbose=False):
 
     # Compute conditional probabilities such that they approximately match
     # the desired perplexity
-    sqdistances = sqdistances.astype(np.float32, copy=False)
-    return get_tsne_sigmas(sqdistances, desired_perplexity, verbose)
+    n_samples = sqdistances.shape[0]
+
+    if sp.sparse.issparse(sqdistances):
+        D2.sort_indices()
+        n_samples = D2.shape[0]
+        distances_data = D2.data.reshape(n_samples, -1)
+        distances_data = distances_data
+        distances_data = distances_data.astype(np.float32, copy=False)
+    else:
+        distances_data = sqdistances.astype(np.float32, copy=False)
+    
+    return get_tsne_sigmas(distances_data, desired_perplexity, verbose)
 
 def computeTSNEkernel(D2, sigmas, normalize=True, symmetrize=True, return_sparse=True):
     
@@ -513,19 +523,21 @@ def computeTSNEkernel(D2, sigmas, normalize=True, symmetrize=True, return_sparse
         n_samples = D2.shape[0]
         distances_data = D2.data.reshape(n_samples, -1)
         distances_data = distances_data
+        distances_data = distances_data.astype(np.float32, copy=False)
     else:
-        distances_data = D2
+        distances_data = D2.astype(np.float32, copy=False)
 
-    conditional_P = np.zeros_like(distances_data)
+    conditional_P = np.zeros_like(distances_data, dtype=np.float32)
     for i in range(conditional_P.shape[0]):
         conditional_P[i] = np.exp(-distances_data[i]/(2*sigmas[i]**2))
-        conditional_P[i,i] = 0
+        if not sp.sparse.issparse(D2):
+            conditional_P[i,i] = 0
         if normalize:
             sum_Pi = max(conditional_P[i].sum(),1e-8)
             conditional_P[i] /= sum_Pi
 
     if sp.sparse.issparse(D2):
-        conditional_P = csr_matrix( (conditional_P.ravel(), distances.indices, distances.indptr),
+        conditional_P = csr_matrix( (conditional_P.ravel(), D2.indices, D2.indptr),
                         shape=(n_samples, n_samples))
     if symmetrize:
         conditional_P = (conditional_P + conditional_P.T)

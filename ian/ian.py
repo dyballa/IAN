@@ -79,16 +79,15 @@ def getSparseMultiScaleK(D2, optScales, sig2scl=1., disc_pts=[], tol=1e-8, degre
 def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
 
     """
-    Does not symmetrize the initial k-NN graph (during Gabriel computation, above),
-    except for nearest neighbors. This possibly improves the approximate graph,
-    according to the paper:
+    Does not symmetrize the initial k-NN graph (during Gabriel computation, above).
+    This possibly improves the approximate graph, according to the paper:
     Dalmia, A., & Sia, S. (2021). Clustering with UMAP: Why and How Connectivity Matters. 
     arXiv preprint arXiv:2108.05525.
     This may also help the Gabriel graph since, when using partial information about
     distances, it is possible to connect points that actually violate the Gabriel rule.
     The authors suggest adding edges from the minimum-spanning tree to prevent it
     from being disconnected. Here we implement adaptations of two methods described in 
-    the paper above, namely `MST-all` and `MST-min`(slightly modified).
+    the paper above, namely `MST-all` and `MST-min` (slightly modified).
     """
     
     eps = 10*np.finfo(D2.dtype).eps
@@ -117,7 +116,7 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
 
     mutualD2 = D2.minimum(D2.T).tolil()
 
-    #connect disconnected pts to their NNs
+    #connect disconnected pts to their NNs?
     # for xi in np.flatnonzero(mutualAdj.sum(1).A1 == 0):
     #     nni = nbr_indices[xi,0]
     #     mutualAdj[xi,nni] = 1
@@ -126,12 +125,12 @@ def computeMutualAdjacencyMatrix(Adj, nbr_indices, D2, mutual_method):
     #     mutualD2[nni,xi] = D2[nni,xi]
 
     nCCs, CCis = sp.sparse.csgraph.connected_components(mutualAdj)
-    print('nCCs',nCCs)
+    # print('nCCs',nCCs)
     if nCCs > 1:
 
         mst = sp.sparse.csgraph.minimum_spanning_tree(D2)
         nCCs_mst = sp.sparse.csgraph.connected_components(mst)[0]
-        print('nCCs_mst',nCCs_mst)
+        # print('nCCs_mst',nCCs_mst)
         if nCCs_mst > 1:
             print('***WARNING: Initial # of minimum-spanning tree connected components > 1.')
             print('This indicates you should increase `max_nbrhood_size` or check for outliers.')

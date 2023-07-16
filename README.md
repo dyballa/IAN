@@ -12,10 +12,12 @@ IAN requires:
 - NumPy
 - SciPy
 - scikit-learn
-- CVXPY
 - Matplotlib
+- CVXPY
 
-### User installation
+Optional: the CVXPY optimization library is needed when using the `'l1'` objective function; it supports a number of different solvers. Although its default solvers (e.g., ECOS and SCS) will work fine with moderate sized datasets, using a commercial solver usually leads to considerably faster convergence. IAN has been tested with the GUROBI solver: https://www.cvxpy.org/install/#install-with-gurobi-support, for which free academic licenses and evaluation trials are available.
+
+### Instructions
 
 
 From the command line run:
@@ -24,8 +26,8 @@ From the command line run:
 pip install git+https://github.com/dyballa/IAN
 ```
 
-You will need to have `git` installed for this command to work. I strongly recommend creating a new environment for installing IAN.
+You will need to have `git` installed for this command to work. I strongly recommend creating a fresh virtual environment for installing IAN.
 
 ## Documentation
 
-I am currently adding docs for all available functions. You will also find short demos in the notebooks available in the [`examples`](/examples) folder. Feel free to contact me by email if you have any questions.
+You will find short demos in the notebooks available in the [`examples`](/examples) folder. I am currently adding docs for all available functions. Feel free to contact me by email if you have any questions.

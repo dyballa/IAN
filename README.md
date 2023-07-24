@@ -15,7 +15,7 @@ IAN requires:
 - Matplotlib
 - CVXPY
 
-Optional: the CVXPY optimization library is needed when using the `'l1'` objective function; it supports a number of different solvers. Although its default solvers (e.g., ECOS and SCS) will work fine with moderate sized datasets, using a commercial solver usually leads to considerably faster convergence. IAN has been tested with the GUROBI solver: https://www.cvxpy.org/install/#install-with-gurobi-support, for which free academic licenses and evaluation trials are available.
+Optional: the CVXPY optimization library is needed when using the `'l1'` objective function (default); it supports a number of different solvers. Although its pre-installed solvers (e.g., ECOS and SCS) will work fine with moderate sized datasets, using a commercial solver usually leads to considerably faster convergence. IAN has been tested with the GUROBI solver (https://www.cvxpy.org/install/#install-with-gurobi-support), for which free academic licenses and evaluation trials are available.
 
 ### Instructions
 

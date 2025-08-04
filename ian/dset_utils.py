@@ -449,7 +449,7 @@ def dset_stingray(plot=False):
     body_widths -= body_widths.min()
     body_y = np.linspace(-.4,2,len(body_widths))
     body_y -= body_y.min()
-    xrng = body_y.ptp()
+    xrng = np.ptp(body_y)
     body_y /= xrng
     body_widths /= xrng
 

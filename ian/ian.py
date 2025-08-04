@@ -66,7 +66,8 @@ def getSparseMultiScaleK(D2, optScales, sig2scl=1., disc_pts=[], tol=1e-8, degre
             K[K < tol] = 0
             if returnSparse:
                 K = sp.sparse.csr_matrix(K)
-    K.eliminate_zeros()
+    if sp.sparse.issparse(K):
+        K.eliminate_zeros()
     if symmetrize:
         if returnSparse:
             K = K.maximum(K.transpose())

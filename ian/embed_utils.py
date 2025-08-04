@@ -108,14 +108,14 @@ def diffusionMapSparseK(K, n_components, alpha=0, t=1, lambdaScale=True,
     U = U[:,idxs] #Phi
 
     if returnOrtho:
-        Psi = U / U[:,0:1]
+        Psi = U / U[:,0:1] #dividing eltwise by the 1st eigenvector breaks the orthogonality
     elif returnPhi:
         assert sqrtD.ndim == 1 #assert col vector
         Psi = U * sqrtD[:,None]
     else:
         assert sqrtD.ndim == 1 #assert col vector
         Psi = U / sqrtD[:,None]
-        #Phi = U * sqrtD
+        #Phi = U * sqrtD[:,None]
         #assert np.all(np.isclose((Phi.T @ Psi),np.eye(Psi.shape[1])))
 
     #make Psi vectors have unit norm
@@ -131,7 +131,7 @@ def diffusionMapSparseK(K, n_components, alpha=0, t=1, lambdaScale=True,
 
     else: diffmap = Psi
 
-    return diffmap[:,1:],lambdas[1:]
+    return diffmap[:,1:],lambdas[1:] # skip the trivial eigen pair
 
 def diffusionMapK(K, n_components, alpha=0, t=1, tol=1e-8, lambdaScale=True,
     returnPhi=False, returnOrtho=False, unitNorm=False, sparse_eigendecomp=True, use_svd=True):

@@ -452,7 +452,7 @@ def computeThreshold(vals, n_stds, maxthresh=np.inf, plot=True, ax=None, color='
             ax = plt.subplot(111)
             
         counts,_,_ = ax.hist(vals,bin_edges,lw=1.,color=color,histtype='step',label=label) 
-        ax.set_xlabel(f"volume ratio, $\delta_i'$")
+        ax.set_xlabel(r"volume ratio, $\delta_i'$")
         ax.set_ylabel(f"counts")
 
         if np.isclose(stdev,0):
